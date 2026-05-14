@@ -70,6 +70,12 @@ app:
     night-hours:
       start: 0   # inclusive (00:00 UTC)
       end: 5     # exclusive (05:00 UTC)
+    velocity:
+      window-seconds: 60      # kayan pencere boyutu
+      medium-threshold: 3     # > 3 işlem → medium tetiklenir
+      high-threshold: 5       # > 5 işlem → high tetiklenir
+      medium-score: 40
+      high-score: 80
 
 # ── Actuator ────────────────────────────────────────────────────────
 management:
