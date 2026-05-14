@@ -1,0 +1,210 @@
+version: '3.8'
+
+# ──────────────────────────────────────────────
+# Transaction Shield — Local Infrastructure
+# Services: Zookeeper, Kafka, Schema Registry,
+#           PostgreSQL, Redis, Kafka UI
+# ──────────────────────────────────────────────
+
+services:
+
+  # ── Zookeeper ──────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.0
+    container_name: ts-zookeeper
+    restart: unless-stopped
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+    networks:
+      - ts-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Kafka Broker ───────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: ts-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"   # external (host machine)
+      - "9093:9093"   # internal (container-to-container)
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:9092,INTERNAL://kafka:9093
+      KAFKA_LISTENERS: EXTERNAL://0.0.0.0:9092,INTERNAL://0.0.0.0:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - ts-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ── Schema Registry ────────────────────────
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.7.0
+    container_name: ts-schema-registry
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9093
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - ts-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # ── Kafka Topic Initializer ─────────────────
+  # Creates topics on first startup then exits
+  kafka-init:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: ts-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command: >
+      "
+      echo 'Creating Kafka topics...'
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists \
+        --topic transactions.raw \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=604800000
+
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists \
+        --topic transactions.scored \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=604800000
+
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists \
+        --topic transactions.dlq \
+        --partitions 1 \
+        --replication-factor 1 \
+        --config retention.ms=2592000000
+
+      kafka-topics --bootstrap-server kafka:9093 --create --if-not-exists \
+        --topic alerts.created \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=604800000
+
+      echo 'Topics created successfully:'
+      kafka-topics --bootstrap-server kafka:9093 --list
+      "
+    networks:
+      - ts-network
+    restart: on-failure
+
+  # ── PostgreSQL ─────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: ts-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: transactionshield
+      POSTGRES_USER: tsuser
+      POSTGRES_PASSWORD: tspassword
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - ts-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tsuser -d transactionshield"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────
+  redis:
+    image: redis:7.4-alpine
+    container_name: ts-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+    volumes:
+      - redis-data:/data
+    networks:
+      - ts-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── Kafka UI (Provectus) ───────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: ts-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: transaction-shield-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+      DYNAMIC_CONFIG_ENABLED: 'true'
+    networks:
+      - ts-network
+
+# ── Volumes ────────────────────────────────
+volumes:
+  zookeeper-data:
+  zookeeper-log:
+  kafka-data:
+  postgres-data:
+  redis-data:
+
+# ── Networks ───────────────────────────────
+networks:
+  ts-network:
+    driver: bridge
+    name: transaction-shield-network
