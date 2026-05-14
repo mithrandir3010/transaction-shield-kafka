@@ -6,8 +6,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Enum types
 CREATE TYPE transaction_status AS ENUM ('PENDING', 'SCORED', 'APPROVED', 'FLAGGED', 'REJECTED');
-CREATE TYPE alert_severity    AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
-CREATE TYPE alert_status      AS ENUM ('OPEN', 'INVESTIGATING', 'RESOLVED', 'FALSE_POSITIVE');
+-- alert_severity and alert_status are stored as VARCHAR for JPA portability
+-- (avoids PostgreSQL enum DDL migration friction in evolving systems)
 
 -- ── transactions ────────────────────────────────────────────────────
 CREATE TABLE transactions (
@@ -51,22 +51,28 @@ INSERT INTO fraud_rules (rule_code, description, score_weight, enabled) VALUES
     ('NEW_DEVICE',          'First-time device fingerprint for this account',   10, TRUE);
 
 -- ── alerts ──────────────────────────────────────────────────────────
+-- Populated by alert-service when a ScoredTransactionEvent arrives.
+-- transaction_id is a plain VARCHAR (no FK) so alert-service can persist
+-- independently without requiring a matching row in transactions table.
+-- UNIQUE constraint on transaction_id provides DB-level idempotency.
 CREATE TABLE alerts (
-    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    transaction_id UUID         NOT NULL REFERENCES transactions(id),
-    severity       alert_severity NOT NULL,
-    status         alert_status   NOT NULL DEFAULT 'OPEN',
+    id              UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+    transaction_id  VARCHAR(64) NOT NULL UNIQUE,
+    user_id         VARCHAR(64) NOT NULL,
+    fraud_score     SMALLINT    NOT NULL,
+    risk_level      VARCHAR(20) NOT NULL,      -- LOW / MEDIUM / HIGH / CRITICAL
     triggered_rules VARCHAR(512),              -- comma-separated rule codes
-    fraud_score    SMALLINT     NOT NULL,
-    notes          TEXT,
-    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    resolved_at    TIMESTAMPTZ,
-    updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    status          VARCHAR(30) NOT NULL DEFAULT 'OPEN',
+    notes           TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at     TIMESTAMPTZ,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_alerts_transaction_id ON alerts (transaction_id);
 CREATE INDEX idx_alerts_status         ON alerts (status);
-CREATE INDEX idx_alerts_severity       ON alerts (severity);
+CREATE INDEX idx_alerts_risk_level     ON alerts (risk_level);
+CREATE INDEX idx_alerts_created_at     ON alerts (created_at DESC);
 
 -- ── idempotency_log ─────────────────────────────────────────────────
 -- Backup store: Redis is primary; Postgres is the durable fallback

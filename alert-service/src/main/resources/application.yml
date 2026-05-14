@@ -1,0 +1,72 @@
+server:
+  port: 8084
+  shutdown: graceful
+
+spring:
+  application:
+    name: alert-service
+
+  # ── Kafka ─────────────────────────────────────────────────────────
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: alert-service-consumer-group
+      # ConsumerFactory, ack-mode and error handler configured in KafkaConsumerConfig.java
+
+  # ── PostgreSQL ────────────────────────────────────────────────────
+  datasource:
+    url: jdbc:postgresql://localhost:5432/transactionshield
+    username: tsuser
+    password: tspassword
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate        # schema managed by infrastructure/postgres/init.sql
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # ── Jackson ───────────────────────────────────────────────────────
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+# ── App-specific properties ─────────────────────────────────────────
+app:
+  kafka:
+    transactions-scored-topic: transactions.scored
+    transactions-dlq-topic:    transactions.dlq
+    alerts-created-topic:      alerts.created
+    publish-timeout-seconds:   5
+
+  alert:
+    # Risk levels that trigger an AlertCreatedEvent (downstream notification hook)
+    # Override via env var: APP_ALERT_NOTIFY-RISK-LEVELS=CRITICAL
+    notify-risk-levels: HIGH,CRITICAL
+
+# ── Actuator ────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# ── Logging ─────────────────────────────────────────────────────────
+logging:
+  level:
+    com.transactionshield: DEBUG
+    org.springframework.kafka: INFO
+    org.apache.kafka: WARN
+    org.springframework.retry: DEBUG    # shows each retry attempt
+    org.hibernate.SQL: WARN
