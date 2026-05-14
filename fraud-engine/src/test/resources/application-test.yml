@@ -1,0 +1,33 @@
+# ── Integration Test Overrides ────────────────────────────────────────
+# Yükleme sırası: application.yml → application-test.yml (bu dosya üstüne yazar)
+# @ActiveProfiles("test") ile aktif edilir.
+
+spring:
+  jpa:
+    hibernate:
+      # fraud-engine henüz JPA entity içermiyor; validate yerine none seçerek
+      # Hibernate'in boş schema'yı kontrol etmesini engelliyoruz.
+      ddl-auto: none
+    show-sql: false
+
+  # Flyway testlerde devre dışı — schema Testcontainers PostgreSQL'e boş gelir,
+  # fraud-engine için migration script tanımlı değil.
+  flyway:
+    enabled: false
+
+app:
+  rules:
+    velocity:
+      window-seconds: 60
+      medium-threshold: 3
+      high-threshold: 5
+      medium-score: 40
+      high-score: 80
+
+logging:
+  level:
+    com.transactionshield: INFO       # DEBUG yerine INFO: test logları daha okunabilir
+    org.springframework.kafka: WARN
+    org.apache.kafka: ERROR
+    org.testcontainers: INFO
+    org.springframework.retry: INFO
