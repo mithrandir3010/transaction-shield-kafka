@@ -1,0 +1,90 @@
+server:
+  port: 8083
+  shutdown: graceful
+
+spring:
+  application:
+    name: fraud-engine
+
+  # ── Kafka ─────────────────────────────────────────────────────────
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: fraud-engine-consumer-group
+      # auto-offset-reset and enable.auto.commit are set in KafkaConsumerConfig.java
+      # (explicit bean config for visibility)
+
+  # ── Redis ─────────────────────────────────────────────────────────
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          min-idle: 2
+
+  # ── PostgreSQL ────────────────────────────────────────────────────
+  datasource:
+    url: jdbc:postgresql://localhost:5432/transactionshield
+    username: tsuser
+    password: tspassword
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate      # schema managed by init.sql (Faz 0)
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+
+  # ── Jackson ───────────────────────────────────────────────────────
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+# ── App-specific properties ─────────────────────────────────────────
+app:
+  kafka:
+    transactions-raw-topic:    transactions.raw
+    transactions-scored-topic: transactions.scored
+    transactions-dlq-topic:    transactions.dlq
+    publish-timeout-seconds:   5
+
+  idempotency:
+    scoring:
+      ttl-hours: 24
+
+  rules:
+    high-amount:
+      threshold: 10000
+    blacklisted-countries: RU,KP,IR,SY,CU   # overridable via env var
+    night-hours:
+      start: 0   # inclusive (00:00 UTC)
+      end: 5     # exclusive (05:00 UTC)
+
+# ── Actuator ────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# ── Logging ─────────────────────────────────────────────────────────
+logging:
+  level:
+    com.transactionshield: DEBUG
+    org.springframework.kafka: INFO
+    org.apache.kafka: WARN
+    org.hibernate.SQL: WARN
