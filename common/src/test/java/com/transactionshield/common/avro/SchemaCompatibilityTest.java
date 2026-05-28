@@ -211,11 +211,11 @@ class SchemaCompatibilityTest {
     private static Schema addNullableField(Schema base, String fieldName) {
         String nullable = "[\"null\",\"string\"]";
         String originalJson = base.toString();
-        // Splice new field before the closing bracket of "fields"
-        String v2Json = originalJson.replace(
-                "]}", // end of fields array + end of record
-                ",{\"name\":\"" + fieldName + "\",\"type\":" + nullable + ",\"default\":null}]}"
-        );
+        String insertion = ",{\"name\":\"" + fieldName + "\",\"type\":" + nullable + ",\"default\":null}";
+        // Insert before the final "]}" which closes the fields array and the record object.
+        // Using lastIndexOf avoids collisions with embedded "]}" patterns (e.g. "default":[]).
+        int lastIdx = originalJson.lastIndexOf("]}");
+        String v2Json = originalJson.substring(0, lastIdx) + insertion + originalJson.substring(lastIdx);
         return new Schema.Parser().parse(v2Json);
     }
 }

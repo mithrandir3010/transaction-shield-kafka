@@ -3,6 +3,7 @@ package com.transactionshield.alert.consumer;
 import com.transactionshield.alert.entity.Alert;
 import com.transactionshield.alert.producer.AlertEventProducer;
 import com.transactionshield.alert.service.AlertService;
+import com.transactionshield.common.avro.AvroMapper;
 import com.transactionshield.common.enums.RiskLevel;
 import com.transactionshield.common.event.ScoredTransactionEvent;
 import org.junit.jupiter.api.DisplayName;
@@ -39,12 +40,12 @@ class ScoredTransactionConsumerTest {
         ScoredTransactionEvent event = scoredEvent("tx-h", RiskLevel.HIGH, 80);
         Alert saved = savedAlert("tx-h");
 
-        given(alertService.saveAlert(event)).willReturn(saved);
-        given(alertService.shouldNotify(event)).willReturn(true);
+        given(alertService.saveAlert(any(ScoredTransactionEvent.class))).willReturn(saved);
+        given(alertService.shouldNotify(any(ScoredTransactionEvent.class))).willReturn(true);
 
-        consumer.consume(event, "transactions.scored", 0, 42L, ack);
+        consumer.consume(AvroMapper.toAvro(event), "transactions.scored", 0, 42L, ack);
 
-        verify(alertService).saveAlert(event);
+        verify(alertService).saveAlert(any(ScoredTransactionEvent.class));
         verify(alertEventProducer).publish(saved);
         verify(ack).acknowledge();
     }
@@ -55,10 +56,10 @@ class ScoredTransactionConsumerTest {
         ScoredTransactionEvent event = scoredEvent("tx-c", RiskLevel.CRITICAL, 100);
         Alert saved = savedAlert("tx-c");
 
-        given(alertService.saveAlert(event)).willReturn(saved);
-        given(alertService.shouldNotify(event)).willReturn(true);
+        given(alertService.saveAlert(any(ScoredTransactionEvent.class))).willReturn(saved);
+        given(alertService.shouldNotify(any(ScoredTransactionEvent.class))).willReturn(true);
 
-        consumer.consume(event, "transactions.scored", 1, 99L, ack);
+        consumer.consume(AvroMapper.toAvro(event), "transactions.scored", 1, 99L, ack);
 
         verify(alertEventProducer).publish(saved);
         verify(ack).acknowledge();
@@ -69,10 +70,10 @@ class ScoredTransactionConsumerTest {
     void consume_lowRisk_persistsAlertButNoEventPublished() throws Exception {
         ScoredTransactionEvent event = scoredEvent("tx-l", RiskLevel.LOW, 10);
 
-        given(alertService.saveAlert(event)).willReturn(savedAlert("tx-l"));
-        given(alertService.shouldNotify(event)).willReturn(false);
+        given(alertService.saveAlert(any(ScoredTransactionEvent.class))).willReturn(savedAlert("tx-l"));
+        given(alertService.shouldNotify(any(ScoredTransactionEvent.class))).willReturn(false);
 
-        consumer.consume(event, "transactions.scored", 0, 1L, ack);
+        consumer.consume(AvroMapper.toAvro(event), "transactions.scored", 0, 1L, ack);
 
         verifyNoInteractions(alertEventProducer);
         verify(ack).acknowledge();
@@ -83,10 +84,10 @@ class ScoredTransactionConsumerTest {
     void consume_mediumRisk_persistsAlertButNoEventPublished() throws Exception {
         ScoredTransactionEvent event = scoredEvent("tx-m", RiskLevel.MEDIUM, 50);
 
-        given(alertService.saveAlert(event)).willReturn(savedAlert("tx-m"));
-        given(alertService.shouldNotify(event)).willReturn(false);
+        given(alertService.saveAlert(any(ScoredTransactionEvent.class))).willReturn(savedAlert("tx-m"));
+        given(alertService.shouldNotify(any(ScoredTransactionEvent.class))).willReturn(false);
 
-        consumer.consume(event, "transactions.scored", 0, 2L, ack);
+        consumer.consume(AvroMapper.toAvro(event), "transactions.scored", 0, 2L, ack);
 
         verifyNoInteractions(alertEventProducer);
         verify(ack).acknowledge();
@@ -96,10 +97,11 @@ class ScoredTransactionConsumerTest {
     @DisplayName("AlertService persist başarısız → exception propagate edilir, ack verilmez")
     void consume_persistFails_exceptionPropagatedNoAck() {
         ScoredTransactionEvent event = scoredEvent("tx-fail", RiskLevel.HIGH, 80);
-        given(alertService.saveAlert(event)).willThrow(new RuntimeException("DB down"));
+        given(alertService.saveAlert(any(ScoredTransactionEvent.class)))
+                .willThrow(new RuntimeException("DB down"));
 
         assertThatThrownBy(() ->
-                consumer.consume(event, "transactions.scored", 0, 3L, ack))
+                consumer.consume(AvroMapper.toAvro(event), "transactions.scored", 0, 3L, ack))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("DB down");
 
@@ -113,12 +115,12 @@ class ScoredTransactionConsumerTest {
         ScoredTransactionEvent event = scoredEvent("tx-pub-fail", RiskLevel.HIGH, 80);
         Alert saved = savedAlert("tx-pub-fail");
 
-        given(alertService.saveAlert(event)).willReturn(saved);
-        given(alertService.shouldNotify(event)).willReturn(true);
+        given(alertService.saveAlert(any(ScoredTransactionEvent.class))).willReturn(saved);
+        given(alertService.shouldNotify(any(ScoredTransactionEvent.class))).willReturn(true);
         willThrow(new RuntimeException("Kafka down")).given(alertEventProducer).publish(saved);
 
         assertThatThrownBy(() ->
-                consumer.consume(event, "transactions.scored", 0, 4L, ack))
+                consumer.consume(AvroMapper.toAvro(event), "transactions.scored", 0, 4L, ack))
                 .isInstanceOf(RuntimeException.class);
 
         verify(ack, never()).acknowledge();
@@ -130,14 +132,14 @@ class ScoredTransactionConsumerTest {
         ScoredTransactionEvent event = scoredEvent("tx-ack", RiskLevel.HIGH, 80);
         Alert saved = savedAlert("tx-ack");
 
-        given(alertService.saveAlert(event)).willReturn(saved);
-        given(alertService.shouldNotify(event)).willReturn(true);
+        given(alertService.saveAlert(any(ScoredTransactionEvent.class))).willReturn(saved);
+        given(alertService.shouldNotify(any(ScoredTransactionEvent.class))).willReturn(true);
 
-        consumer.consume(event, "transactions.scored", 0, 5L, ack);
+        consumer.consume(AvroMapper.toAvro(event), "transactions.scored", 0, 5L, ack);
 
         // save → publish → ack sırası
         var inOrder = inOrder(alertService, alertEventProducer, ack);
-        inOrder.verify(alertService).saveAlert(event);
+        inOrder.verify(alertService).saveAlert(any(ScoredTransactionEvent.class));
         inOrder.verify(alertEventProducer).publish(saved);
         inOrder.verify(ack).acknowledge();
     }

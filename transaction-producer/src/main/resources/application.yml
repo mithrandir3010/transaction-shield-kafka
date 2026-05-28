@@ -1,22 +1,14 @@
 server:
   port: 8082
-  shutdown: graceful  # Wait for in-flight requests before stopping
+  shutdown: graceful
 
 spring:
   application:
     name: transaction-producer
 
-  # ── Kafka ─────────────────────────────────────────────────────────
   kafka:
     bootstrap-servers: localhost:9092
-    # Producer config is defined in KafkaProducerConfig.java (explicit bean)
-    # to keep all Kafka producer settings in one place.
 
-app:
-  kafka:
-    schema-registry-url: http://localhost:8081
-
-  # ── Redis ─────────────────────────────────────────────────────────
   data:
     redis:
       host: localhost
@@ -28,22 +20,20 @@ app:
           max-idle: 8
           min-idle: 2
 
-  # ── Jackson ───────────────────────────────────────────────────────
   jackson:
     serialization:
-      write-dates-as-timestamps: false   # ISO-8601 strings for Instant fields
+      write-dates-as-timestamps: false
     deserialization:
       fail-on-unknown-properties: false
 
-# ── App-specific properties ─────────────────────────────────────────
 app:
   kafka:
+    schema-registry-url: http://localhost:8081
     transactions-raw-topic: transactions.raw
     publish-timeout-seconds: 5
   idempotency:
     ttl-hours: 24
 
-# ── Actuator ────────────────────────────────────────────────────────
 management:
   endpoints:
     web:
@@ -53,7 +43,6 @@ management:
     health:
       show-details: when-authorized
 
-# ── Logging ─────────────────────────────────────────────────────────
 logging:
   level:
     com.transactionshield: DEBUG

@@ -52,7 +52,7 @@ class TransactionProducerServiceTest {
         assertThat(response.status()).isEqualTo("ACCEPTED");
         assertThat(response.idempotencyKey()).isEqualTo("key-happy");
         assertThat(response.transactionId()).isNotBlank();
-        assertThat(response.timestamp()).isNotNull();
+        assertThat(response.acceptedAt()).isNotNull();
         verify(idempotencyService, never()).release(any());
     }
 

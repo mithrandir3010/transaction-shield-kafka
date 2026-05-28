@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,7 +31,7 @@ class IdempotencyServiceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(idempotencyService, "ttlHours", 24L);
-        given(redisTemplate.opsForValue()).willReturn(valueOps);
+        lenient().when(redisTemplate.opsForValue()).thenReturn(valueOps);
     }
 
     @Test
