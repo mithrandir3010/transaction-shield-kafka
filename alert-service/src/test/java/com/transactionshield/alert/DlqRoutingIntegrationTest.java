@@ -11,7 +11,10 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -69,6 +72,7 @@ import static org.mockito.BDDMockito.given;
 @Testcontainers
 @ActiveProfiles("test")
 @Import(TestAlertKafkaConfig.class)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("DLQ Routing — Kafka retry exhaustion sonrası DLQ yönlendirme")
 class DlqRoutingIntegrationTest {
 
@@ -136,6 +140,7 @@ class DlqRoutingIntegrationTest {
     }
 
     @Test
+    @Order(1)
     @DisplayName("Kalıcı AlertService hatası → Kafka retry'ları tüketilir → mesaj DLQ'ya yönlenir")
     void whenPersistentAlertServiceFailure_thenMessageRoutedToDlq() throws Exception {
         String txId = "dlq-test-" + UUID.randomUUID();
@@ -152,6 +157,7 @@ class DlqRoutingIntegrationTest {
     }
 
     @Test
+    @Order(2)
     @DisplayName("DLQ mesajı — DeadLetterPublishingRecoverer header'larını ekler")
     void whenMessageInDlq_exceptionHeadersPresent() throws Exception {
         String txId = "dlq-hdr-" + UUID.randomUUID();
@@ -168,6 +174,7 @@ class DlqRoutingIntegrationTest {
     }
 
     @Test
+    @Order(3)
     @DisplayName("Birden fazla başarısız mesaj → her biri DLQ'ya yönlenir")
     void whenMultipleMessagesFail_allRoutedToDlq() throws Exception {
         String txId1 = "dlq-m1-" + UUID.randomUUID();

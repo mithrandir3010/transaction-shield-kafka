@@ -85,6 +85,19 @@ public class AlertService {
     }
 
     /**
+     * Duplicate constraint violation — no retry, no DLQ. Re-throw so the consumer
+     * can ack the offset and move on (at-least-once duplicates are expected).
+     * Spring Retry picks the most-specific @Recover, so this fires before the
+     * general DataAccessException recovery below.
+     */
+    @Recover
+    public Alert recoverFromDuplicate(DataIntegrityViolationException ex, ScoredTransactionEvent event) {
+        log.warn("Duplicate transactionId detected — transactionId={} skipping",
+                event.transactionId());
+        throw ex;
+    }
+
+    /**
      * Called by Spring Retry after all @Retryable attempts fail.
      * Wraps the root cause and rethrows so the Kafka consumer propagates
      * the error to the DefaultErrorHandler (which routes to DLQ).

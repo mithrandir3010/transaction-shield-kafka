@@ -15,6 +15,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -47,6 +49,7 @@ import static org.mockito.Mockito.verify;
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect"
 })
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
 @DisplayName("AlertService @Retryable — Spring Retry davranış testleri")
 class AlertServiceRetryTest {
 
