@@ -5,6 +5,7 @@ import com.transactionshield.alert.entity.Alert;
 import com.transactionshield.alert.exception.AlertPersistenceException;
 import com.transactionshield.alert.repository.AlertRepository;
 import com.transactionshield.common.event.ScoredTransactionEvent;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +40,7 @@ import java.util.Set;
 public class AlertService {
 
     private final AlertRepository alertRepository;
+    private final MeterRegistry   meterRegistry;
 
     @Value("#{'${app.alert.notify-risk-levels:HIGH,CRITICAL}'.split(',')}")
     private Set<String> notifyRiskLevels;
@@ -73,6 +75,8 @@ public class AlertService {
                             .build();
 
                     Alert saved = alertRepository.save(alert);
+                    meterRegistry.counter("alert.created.total",
+                            "risk_level", saved.getRiskLevel()).increment();
                     log.info("Alert persisted — id={} transactionId={} fraudScore={} riskLevel={}",
                             saved.getId(), saved.getTransactionId(),
                             saved.getFraudScore(), saved.getRiskLevel());

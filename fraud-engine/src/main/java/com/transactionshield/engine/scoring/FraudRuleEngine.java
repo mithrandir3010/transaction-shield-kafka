@@ -4,6 +4,8 @@ import com.transactionshield.common.enums.RiskLevel;
 import com.transactionshield.common.event.TransactionEvent;
 import com.transactionshield.engine.rule.FraudRule;
 import com.transactionshield.engine.rule.RuleResult;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,6 +25,7 @@ import java.util.List;
 public class FraudRuleEngine {
 
     private final List<FraudRule> rules;
+    private final MeterRegistry   meterRegistry;
 
     public ScoringResult evaluate(TransactionEvent event) {
         log.debug("Evaluating {} rules for transactionId={}", rules.size(), event.transactionId());
@@ -41,6 +44,16 @@ public class FraudRuleEngine {
 
         int fraudScore = Math.min(rawScore, 100);
         RiskLevel riskLevel = RiskLevel.from(fraudScore);
+
+        triggered.forEach(r ->
+                meterRegistry.counter("fraud.rule.hit.total", "rule", r.ruleCode()).increment());
+
+        DistributionSummary.builder("fraud.score.distribution")
+                .baseUnit("points")
+                .register(meterRegistry)
+                .record(fraudScore);
+
+        meterRegistry.counter("transaction.processed.total", "risk_level", riskLevel.name()).increment();
 
         log.info("Scoring complete — transactionId={} rawScore={} fraudScore={} riskLevel={} triggeredRules={}",
                 event.transactionId(), rawScore, fraudScore, riskLevel,

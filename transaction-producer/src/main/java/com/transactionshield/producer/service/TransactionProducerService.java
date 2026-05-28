@@ -6,6 +6,7 @@ import com.transactionshield.common.dto.TransactionResponse;
 import com.transactionshield.common.event.TransactionEvent;
 import com.transactionshield.producer.exception.DuplicateTransactionException;
 import com.transactionshield.producer.exception.KafkaPublishException;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,7 @@ public class TransactionProducerService {
 
     private final IdempotencyService idempotencyService;
     private final KafkaTemplate<String, com.transactionshield.avro.TransactionEvent> kafkaTemplate;
+    private final MeterRegistry meterRegistry;
 
     @Value("${app.kafka.transactions-raw-topic}")
     private String transactionsRawTopic;
@@ -34,6 +36,7 @@ public class TransactionProducerService {
         String idempotencyKey = request.idempotencyKey();
 
         if (!idempotencyService.tryAcquire(idempotencyKey)) {
+            meterRegistry.counter("idempotency.reject.total", "service", "transaction-producer").increment();
             throw new DuplicateTransactionException(idempotencyKey);
         }
 

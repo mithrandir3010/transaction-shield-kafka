@@ -100,6 +100,13 @@
                 <version>${mapstruct.version}</version>
                 <scope>provided</scope>
             </dependency>
+
+            <!-- Structured JSON logging (not in Spring Boot BOM) -->
+            <dependency>
+                <groupId>net.logstash.logback</groupId>
+                <artifactId>logstash-logback-encoder</artifactId>
+                <version>8.0</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 

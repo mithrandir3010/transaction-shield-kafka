@@ -8,8 +8,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
@@ -31,6 +34,7 @@ class TransactionProducerServiceTest {
 
     @Mock IdempotencyService idempotencyService;
     @Mock KafkaTemplate<String, com.transactionshield.avro.TransactionEvent> kafkaTemplate;
+    @Spy  MeterRegistry meterRegistry = new SimpleMeterRegistry();
     @InjectMocks TransactionProducerService producerService;
 
     @BeforeEach

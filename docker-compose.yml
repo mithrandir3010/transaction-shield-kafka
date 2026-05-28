@@ -174,6 +174,64 @@ services:
       timeout: 3s
       retries: 5
 
+  # ── Prometheus ─────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: ts-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux uyumluluğu
+    networks:
+      - ts-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── Grafana ─────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: ts-grafana
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/fraud-detection.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      - ts-network
+
+  # ── Jaeger (Distributed Tracing) ────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.63.0
+    container_name: ts-jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4318:4318"     # OTLP HTTP receiver
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+      - ts-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:14269/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
   # ── Kafka UI (Provectus) ───────────────────
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -201,6 +259,7 @@ volumes:
   kafka-data:
   postgres-data:
   redis-data:
+  grafana-data:
 
 # ── Networks ───────────────────────────────
 networks:

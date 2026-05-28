@@ -12,7 +12,10 @@ spring:
     consumer:
       group-id: fraud-engine-consumer-group
       # auto-offset-reset and enable.auto.commit are set in KafkaConsumerConfig.java
-      # (explicit bean config for visibility)
+    listener:
+      observation-enabled: true
+    template:
+      observation-enabled: true
 
   # ── Redis ─────────────────────────────────────────────────────────
   data:
@@ -88,10 +91,18 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, metrics
+        include: health, info, metrics, prometheus
   endpoint:
     health:
       show-details: when-authorized
+    prometheus:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
 
 # ── Logging ─────────────────────────────────────────────────────────
 logging:

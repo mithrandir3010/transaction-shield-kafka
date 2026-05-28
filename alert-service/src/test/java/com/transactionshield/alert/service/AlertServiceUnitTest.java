@@ -4,6 +4,8 @@ import com.transactionshield.alert.entity.Alert;
 import com.transactionshield.alert.repository.AlertRepository;
 import com.transactionshield.common.enums.RiskLevel;
 import com.transactionshield.common.event.ScoredTransactionEvent;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,6 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -32,6 +35,7 @@ import static org.mockito.Mockito.verify;
 class AlertServiceUnitTest {
 
     @Mock AlertRepository alertRepository;
+    @Spy  MeterRegistry meterRegistry = new SimpleMeterRegistry();
     @InjectMocks AlertService alertService;
 
     @BeforeEach

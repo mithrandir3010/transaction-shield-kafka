@@ -5,6 +5,7 @@ import com.transactionshield.common.event.TransactionEvent;
 import com.transactionshield.engine.producer.ScoredTransactionProducer;
 import com.transactionshield.engine.scoring.FraudRuleEngine;
 import com.transactionshield.engine.scoring.ScoringResult;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,11 +30,13 @@ public class FraudEngineService {
     private final ScoringIdempotencyService idempotencyService;
     private final FraudRuleEngine           ruleEngine;
     private final ScoredTransactionProducer scoredProducer;
+    private final MeterRegistry             meterRegistry;
 
     public void process(TransactionEvent event) throws Exception {
 
         // ── [1] Idempotency ──────────────────────────────────────────
         if (!idempotencyService.tryMarkAsProcessing(event.transactionId())) {
+            meterRegistry.counter("idempotency.reject.total", "service", "fraud-engine").increment();
             log.info("Skipping already-processed transactionId={}", event.transactionId());
             return;
         }
