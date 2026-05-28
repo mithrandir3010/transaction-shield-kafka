@@ -1,0 +1,19 @@
+# ── Transaction Producer — Integration Test Overrides ─────────────────
+# Testcontainers portları @DynamicPropertySource ile override edilir.
+# Bu dosya sadece sabit değerleri override eder.
+
+spring:
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+app:
+  idempotency:
+    ttl-hours: 1      # Testlerde 1 saat yeterli
+
+logging:
+  level:
+    com.transactionshield: INFO
+    org.springframework.kafka: WARN
+    org.apache.kafka: ERROR
+    org.testcontainers: INFO

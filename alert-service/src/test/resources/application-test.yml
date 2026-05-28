@@ -1,0 +1,29 @@
+# ── Alert Service — Integration Test Overrides ────────────────────────
+# Testcontainers portları @DynamicPropertySource ile override edilir.
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate    # Testcontainers PostgreSQL + init.sql ile şema önceden oluşturulur
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+app:
+  alert:
+    notify-risk-levels: HIGH,CRITICAL
+
+logging:
+  level:
+    com.transactionshield: INFO
+    org.springframework.kafka: WARN
+    org.apache.kafka: ERROR
+    org.testcontainers: INFO
+    org.springframework.retry: DEBUG
