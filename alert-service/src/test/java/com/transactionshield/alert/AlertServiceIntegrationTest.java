@@ -127,11 +127,12 @@ class AlertServiceIntegrationTest extends AbstractAlertIntegrationTest {
         assertThat(first).isNotNull();
         assertThat(first.transactionId()).isEqualTo(txId);
 
+        // Duplicate processing may publish a second AlertCreatedEvent (shouldNotify() is
+        // called even when saveAlert() short-circuits on an existing alert). Drain it here
+        // so it does not leak into the next test's negative assertion window.
+        alertCreatedCollector.poll(NEGATIVE_WAIT);
+
         // DB garantisi: UNIQUE transaction_id → tek satır
-        // Not: saveAlert() duplicate'i bulunca mevcut alert'i döner ve save() çağırmaz.
-        // Ancak shouldNotify() hâlâ çağrılır → ikinci AlertCreatedEvent yayılabilir.
-        // Downstream consumer'lar (email, SMS) idempotent olmalıdır.
-        // Bu nedenle burada sadece DB tarafı doğrulanır.
         Optional<Alert> savedAlert = alertRepository.findByTransactionId(txId);
         assertThat(savedAlert).isPresent();
         assertThat(savedAlert.get().getTransactionId()).isEqualTo(txId);
