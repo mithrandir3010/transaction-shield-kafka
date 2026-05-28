@@ -5,6 +5,7 @@
 ![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.4-brightgreen?style=for-the-badge&logo=springboot)
 ![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-7.7-black?style=for-the-badge&logo=apachekafka)
+![Apache Avro](https://img.shields.io/badge/Apache_Avro-1.11-purple?style=for-the-badge)
 ![Redis](https://img.shields.io/badge/Redis-7.4-red?style=for-the-badge&logo=redis)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?style=for-the-badge&logo=postgresql)
 ![Testcontainers](https://img.shields.io/badge/Testcontainers-1.20-teal?style=for-the-badge)
@@ -27,6 +28,7 @@ Most fraud detection tutorials stop at "publish to Kafka and log it." This proje
 - **How do you detect a user making 10 transactions in 60 seconds?** → Redis ZSET Sliding Window with atomic Lua Script
 - **How do you add a new fraud rule without touching existing code?** → Strategy Pattern; one new `@Component` class, zero other changes
 - **What happens when Kafka delivery fails?** → Exponential backoff + Dead Letter Queue
+- **How do you prevent a schema change from silently breaking downstream consumers?** → Avro + Schema Registry BACKWARD compatibility enforced at CI time
 
 ---
 
@@ -65,7 +67,7 @@ flowchart LR
 | `transaction-producer` | 8082 | REST API → Redis idempotency check → `transactions.raw` publish |
 | `fraud-engine` | 8083 | Consume → Rule Engine → Score → `transactions.scored` publish |
 | `alert-service` | 8084 | Consume → PostgreSQL persist → `alerts.created` (HIGH/CRITICAL only) |
-| `common` | — | Shared Kafka event records (`TransactionEvent`, `ScoredTransactionEvent`, `AlertCreatedEvent`) |
+| `common` | — | Avro schemas (`.avsc`), generated Java classes, `AvroMapper`, shared domain records & DTOs |
 
 ---
 
@@ -232,6 +234,94 @@ Two retry layers, independent of each other:
 
 ---
 
+### 5. 📐 Schema Governance — Avro + Schema Registry
+
+All Kafka events are serialized with **Apache Avro** and governed by **Confluent Schema Registry**. JSON was the starting point, but it has a critical weakness in multi-service architectures: any field rename, type change, or removal silently corrupts downstream consumers with no compile-time or runtime safety.
+
+**The problem JSON creates:**
+
+```
+Producer renames: "userId" → "user_id"
+Consumer expects:  "userId"
+Result:            userId = null — no exception, silent data loss ✗
+```
+
+**How Avro + Schema Registry solves it:**
+
+```
+Every message carries a 5-byte prefix: [0x00][schema-id (4 bytes)]
+Consumer fetches the schema from Registry by ID and validates every record.
+A breaking change is rejected at publish time — before it can reach consumers.
+```
+
+**BACKWARD compatibility rule — the only safe default:**
+
+```
+BACKWARD means: new schema can read data written by the old schema.
+✅ Add an optional field with a default  → safe (old consumers ignore new field)
+✅ Remove a field                        → safe (old data still readable)
+❌ Add a required field (no default)     → REJECTED by Registry
+❌ Change field type string → int        → REJECTED by Registry
+```
+
+**Wire format across all topics:**
+
+| Topic | Subject | Schema Class |
+|---|---|---|
+| `transactions.raw` | `transactions.raw-value` | `TransactionEvent.avsc` |
+| `transactions.scored` | `transactions.scored-value` | `ScoredTransactionEvent.avsc` |
+| `alerts.created` | `alerts.created-value` | `AlertCreatedEvent.avsc` |
+
+**Domain model vs wire format separation:**
+
+Services work with internal Java records (`TransactionEvent`, `ScoredTransactionEvent`, `AlertCreatedEvent`). Avro-generated classes are used only at the Kafka boundary. `AvroMapper` is the single translation layer:
+
+```java
+// Producer: domain record → Avro (at publish time)
+kafkaTemplate.send(topic, key, AvroMapper.toAvro(domainEvent));
+
+// Consumer: Avro → domain record (on receipt, before any business logic)
+DomainEvent event = AvroMapper.fromAvro(avroRecord);
+```
+
+This keeps business logic free of generated code and makes schema evolution transparent to the rest of the codebase.
+
+**Schema compatibility is tested before it reaches CI:**
+
+```java
+@Test
+void transactionEvent_addRequiredField_isIncompatible() throws Exception {
+    MockSchemaRegistryClient registry = new MockSchemaRegistryClient();
+    registry.register("transactions.raw-value", TransactionEvent.getClassSchema());
+    registry.updateCompatibility("transactions.raw-value", "BACKWARD");
+
+    Schema v2 = SchemaBuilder.record("TransactionEvent")
+            .fields().requiredString("newMandatoryField").endRecord();
+
+    assertThat(registry.testCompatibility("transactions.raw-value", v2)).isFalse();
+}
+```
+
+`SchemaCompatibilityTest` (in `common`) covers six scenarios: add optional field (valid), add required field (rejected), change field type (rejected) — for all three topics.
+
+---
+
+### 6. 🗄️ Database Schema Governance — Flyway
+
+Schema changes are versioned migrations, not ad-hoc SQL:
+
+| File | Content |
+|---|---|
+| `fraud-engine` `V1__create_base_schema.sql` | `transactions`, `fraud_rules`, `idempotency_log` tables, triggers |
+| `fraud-engine` `V2__seed_fraud_rules.sql` | 5 default rule seeds (HIGH_AMOUNT, VELOCITY_CHECK, …) |
+| `alert-service` `V1__create_alerts_table.sql` | `alerts` table, indexes, trigger |
+
+Each service maintains its own Flyway history table (`flyway_schema_history_fraud_engine`, `flyway_schema_history_alert_service`) to avoid conflicts on a shared database. `init.sql` is kept only for local bootstrapping — it is not the authoritative schema source.
+
+CI runs `mvn --batch-mode verify` on every push, so a broken migration fails the build before it can reach deployment.
+
+---
+
 ## 🛠️ Tech Stack
 
 | Category | Technology | Version | Rationale |
@@ -239,14 +329,18 @@ Two retry layers, independent of each other:
 | Language | Java | 21 | Records for immutable events, pattern matching |
 | Framework | Spring Boot | 3.4.1 | Production autoconfiguration, Kafka integration |
 | Messaging | Apache Kafka (Confluent) | 7.7.0 | Durable, ordered, replay-capable event stream |
+| Serialization | Apache Avro | 1.11.3 | Binary wire format with schema evolution guarantees |
+| Schema Registry | Confluent Schema Registry | 7.7.0 | BACKWARD compatibility enforcement, schema versioning |
 | Cache / State | Redis | 7.4 | SET NX idempotency, ZSET sliding window |
 | Database | PostgreSQL | 16 | Alert persistence, UNIQUE constraint deduplication |
-| Serialization | Jackson (JSON) | 2.18 | Schema-less, human-readable Kafka payloads |
+| DB Migrations | Flyway | 10.x | Versioned, per-service schema migrations |
 | Resilience | Spring Retry | 2.x | `@Retryable` + `@Recover` for DB fault tolerance |
 | Testing | Testcontainers | 1.20 | Real containers, zero mocking |
+| Schema Testing | MockSchemaRegistryClient | — | In-memory registry for compatibility tests (no Docker) |
 | Async assertions | Awaitility | 4.x | Fluent async test assertions |
 | Observability | Spring Actuator | — | `/health`, `/metrics` endpoints |
 | Build | Maven (multi-module) | 3.9 | Enforced module boundaries |
+| CI | GitHub Actions | — | `mvn verify` on every push; broken migrations fail build |
 
 ---
 
@@ -374,6 +468,7 @@ Specific issues mocks cannot catch that Testcontainers catches:
 - Kafka offset commit ordering with `MANUAL_IMMEDIATE` ack mode
 - `DataIntegrityViolationException` from a real PostgreSQL UNIQUE constraint
 - Lua script SHA1 caching (`EVALSHA`) and Redis script execution model
+- Avro schema ID round-trip: producer registers schema → consumer fetches by ID → deserialization
 
 ### Test Architecture
 
@@ -385,14 +480,43 @@ AbstractIntegrationTest
 │
 ├── @DynamicPropertySource → injects dynamic ports into Spring context
 └── @Import(TestKafkaConfig.class)
-      ├── rawEventTemplate              (publishes TransactionEvent to transactions.raw)
-      ├── testKafkaListenerFactory      (separate consumer factory for ScoredTransactionEvent)
+      ├── rawEventTemplate              (KafkaTemplate<String, avro.TransactionEvent> + KafkaAvroSerializer)
+      ├── testKafkaListenerFactory      (KafkaAvroDeserializer, SPECIFIC_AVRO_READER=true)
       └── NewTopic beans                (auto-creates topics via KafkaAdmin)
 
 ScoredEventCollector (@Component in test source)
+├── @KafkaListener receives avro.ScoredTransactionEvent
+├── AvroMapper.fromAvro() → domain ScoredTransactionEvent
 └── BlockingQueue<ScoredTransactionEvent>
     └── poll(Duration timeout) → thread-safe async event capture
 ```
+
+**Avro in tests — `mock://test-registry`:**
+
+Integration tests use `app.kafka.schema-registry-url: mock://test-registry` (set in `application-test.yml`). This activates Confluent's `MockSchemaRegistryClient` — an in-memory registry that requires no Docker container. All producers and consumers sharing the same mock URL share the same in-memory registry within the JVM, so schema registration and ID lookup work exactly as in production.
+
+```yaml
+# application-test.yml (all three services)
+app:
+  kafka:
+    schema-registry-url: mock://test-registry
+```
+
+**`SchemaCompatibilityTest` — contract tests without Kafka:**
+
+```
+common/src/test/java/.../avro/SchemaCompatibilityTest.java
+
+✅ TransactionEvent   — add optional field (nullable, default=null)  → compatible
+❌ TransactionEvent   — add required field (no default)              → REJECTED
+❌ TransactionEvent   — change field type string → int               → REJECTED
+✅ ScoredTransactionEvent — current schema registers                 → success
+✅ ScoredTransactionEvent — add optional field                       → compatible
+✅ AlertCreatedEvent  — current schema registers                     → success
+❌ AlertCreatedEvent  — add required field                           → REJECTED
+```
+
+These tests run in milliseconds (no containers), catch breaking changes at unit-test time, and mirror exactly what Schema Registry enforces in production.
 
 ### Test Scenarios
 
@@ -429,18 +553,39 @@ Send same transactionId three times:
   third  → null (timeout) ✅
 ```
 
+**`AlertServiceIntegrationTest`** — 6 alert service scenarios:
+```
+✅ HIGH risk event     → alert persisted in DB + AlertCreatedEvent published to Kafka
+✅ CRITICAL risk event → alert persisted + AlertCreatedEvent published
+✅ LOW risk event      → alert persisted, AlertCreatedEvent NOT published (negative assertion)
+✅ MEDIUM risk event   → alert persisted, AlertCreatedEvent NOT published
+✅ Duplicate event     → DB UNIQUE constraint → single row (idempotency at storage layer)
+✅ Field correctness   → all DB columns match event fields exactly
+```
+
+**`DlqRoutingIntegrationTest`** — DLQ routing under persistent failure:
+```
+@MockBean AlertService → always throws AlertPersistenceException
+FastErrorHandlerConfig → FixedBackOff(0ms, 2 retries) — speeds up the test
+✅ 3 Kafka attempts exhausted → message routed to transactions.dlq
+✅ DLQ record contains Spring Kafka exception headers
+✅ Multiple failing messages → each independently routes to DLQ
+```
+
 ### Running the Tests
 
 ```bash
-# Run all integration tests (requires Docker)
-cd fraud-engine
-mvn test -Dtest="*IntegrationTest"
+# Schema compatibility tests (no Docker, milliseconds)
+mvn test -pl common -Dtest="SchemaCompatibilityTest"
 
-# Run a specific class
-mvn test -Dtest="VelocityRuleIntegrationTest"
+# Fraud engine integration tests
+mvn test -pl fraud-engine -Dtest="*IntegrationTest"
 
-# Run all tests with verbose output
-mvn test -Dtest="*IntegrationTest" -pl fraud-engine
+# Alert service integration tests
+mvn test -pl alert-service -Dtest="*IntegrationTest"
+
+# All modules
+mvn verify
 ```
 
 ---
@@ -451,63 +596,80 @@ mvn test -Dtest="*IntegrationTest" -pl fraud-engine
 transaction-shield-kafka/
 │
 ├── common/                              # Shared library — no Spring Boot entrypoint
+│   ├── src/main/avro/                   # Avro schema definitions (source of truth)
+│   │   ├── TransactionEvent.avsc        # Wire format: transactions.raw-value
+│   │   ├── ScoredTransactionEvent.avsc  # Wire format: transactions.scored-value
+│   │   └── AlertCreatedEvent.avsc       # Wire format: alerts.created-value
+│   │                                    # → avro-maven-plugin generates Java classes into
+│   │                                    #   target/generated-sources/avro/com/transactionshield/avro/
 │   └── src/main/java/com/transactionshield/common/
-│       ├── event/
-│       │   ├── TransactionEvent.java        # Kafka: transactions.raw
-│       │   ├── ScoredTransactionEvent.java  # Kafka: transactions.scored
-│       │   └── AlertCreatedEvent.java       # Kafka: alerts.created
+│       ├── avro/
+│       │   └── AvroMapper.java          # Single translation layer: domain ↔ Avro
+│       ├── event/                       # Internal domain records (not exposed on wire)
+│       │   ├── TransactionEvent.java
+│       │   ├── ScoredTransactionEvent.java
+│       │   └── AlertCreatedEvent.java
 │       ├── dto/
-│       │   ├── TransactionRequest.java      # REST input (Bean Validation)
-│       │   └── TransactionResponse.java     # REST output
+│       │   ├── TransactionRequest.java  # REST input (Bean Validation)
+│       │   └── TransactionResponse.java
 │       └── enums/
-│           ├── RiskLevel.java               # LOW / MEDIUM / HIGH / CRITICAL
+│           ├── RiskLevel.java           # LOW / MEDIUM / HIGH / CRITICAL
 │           └── TransactionStatus.java
 │
 ├── transaction-producer/                # :8082
-│   └── src/main/java/.../producer/
-│       ├── controller/TransactionController.java
-│       ├── service/
-│       │   ├── TransactionProducerService.java  # Orchestrates idempotency + Kafka publish
-│       │   └── IdempotencyService.java           # Redis SET NX guard
-│       └── config/
-│           ├── KafkaProducerConfig.java          # enable.idempotence=true, acks=all
-│           └── RedisConfig.java
+│   ├── src/main/java/.../producer/
+│   │   ├── controller/TransactionController.java
+│   │   ├── service/
+│   │   │   ├── TransactionProducerService.java  # domain event → AvroMapper → Kafka
+│   │   │   └── IdempotencyService.java
+│   │   └── config/
+│   │       ├── KafkaProducerConfig.java          # KafkaAvroSerializer, acks=all
+│   │       └── RedisConfig.java
+│   └── src/main/resources/db/migration/        # (no DB in this service)
 │
 ├── fraud-engine/                        # :8083
-│   └── src/main/java/.../engine/
-│       ├── rule/
-│       │   ├── FraudRule.java                   # Strategy interface
-│       │   ├── RuleResult.java                  # Immutable result record
-│       │   └── impl/
-│       │       ├── HighAmountRule.java           # @Order(1)
-│       │       ├── BlacklistedCountryRule.java   # @Order(2)
-│       │       ├── NightTransactionRule.java     # @Order(3)
-│       │       └── VelocityRule.java             # @Order(4) — Redis ZSET
-│       ├── scoring/
-│       │   ├── FraudRuleEngine.java             # Aggregates List<FraudRule>
-│       │   └── ScoringResult.java
-│       ├── service/
-│       │   ├── FraudEngineService.java          # Idempotency + Rules + Publish
-│       │   ├── ScoringIdempotencyService.java   # Redis SET NX on transactionId
-│       │   └── VelocityCheckService.java        # Lua script execution
-│       ├── consumer/
-│       │   ├── TransactionEventConsumer.java    # @KafkaListener, manual ack
-│       │   └── DlqConsumer.java                 # DLQ monitoring
-│       └── resources/scripts/
-│           └── velocity_check.lua               # Atomic ZADD+ZREMRANGE+ZCARD+EXPIRE
+│   ├── src/main/java/.../engine/
+│   │   ├── rule/
+│   │   │   ├── FraudRule.java                   # Strategy interface
+│   │   │   ├── RuleResult.java
+│   │   │   └── impl/
+│   │   │       ├── HighAmountRule.java           # @Order(1)
+│   │   │       ├── BlacklistedCountryRule.java   # @Order(2)
+│   │   │       ├── NightTransactionRule.java     # @Order(3)
+│   │   │       └── VelocityRule.java             # @Order(4) — Redis ZSET
+│   │   ├── scoring/
+│   │   │   ├── FraudRuleEngine.java
+│   │   │   └── ScoringResult.java
+│   │   ├── service/
+│   │   │   ├── FraudEngineService.java
+│   │   │   ├── ScoringIdempotencyService.java
+│   │   │   └── VelocityCheckService.java
+│   │   ├── consumer/
+│   │   │   ├── TransactionEventConsumer.java    # receives avro.TransactionEvent → AvroMapper
+│   │   │   └── DlqConsumer.java
+│   │   └── producer/
+│   │       └── ScoredTransactionProducer.java   # AvroMapper → avro.ScoredTransactionEvent
+│   ├── src/main/resources/
+│   │   ├── db/migration/
+│   │   │   ├── V1__create_base_schema.sql       # transactions, fraud_rules, idempotency_log
+│   │   │   └── V2__seed_fraud_rules.sql         # 5 default rules
+│   │   └── scripts/velocity_check.lua
 │
 ├── alert-service/                       # :8084
-│   └── src/main/java/.../alert/
-│       ├── entity/Alert.java                    # JPA entity, UNIQUE(transaction_id)
-│       ├── repository/AlertRepository.java      # findAlertsFiltered JPQL
-│       ├── service/AlertService.java            # @Retryable + @Transactional
-│       ├── consumer/ScoredTransactionConsumer.java
-│       ├── producer/AlertEventProducer.java     # alerts.created publisher
-│       └── controller/AlertController.java      # GET /api/v1/alerts
+│   ├── src/main/java/.../alert/
+│   │   ├── entity/Alert.java
+│   │   ├── repository/AlertRepository.java
+│   │   ├── service/AlertService.java            # @Retryable + @Transactional
+│   │   ├── consumer/ScoredTransactionConsumer.java  # receives avro.ScoredTransactionEvent
+│   │   ├── producer/AlertEventProducer.java         # AvroMapper → avro.AlertCreatedEvent
+│   │   └── controller/AlertController.java
+│   └── src/main/resources/db/migration/
+│       └── V1__create_alerts_table.sql
 │
 ├── infrastructure/
-│   └── postgres/init.sql                # Schema: transactions, alerts, fraud_rules, idempotency_log
+│   └── postgres/init.sql                # Local bootstrap only — Flyway is authoritative
 │
+├── .github/workflows/ci.yml             # mvn --batch-mode verify on push/PR
 └── docker-compose.yml                   # Kafka, Zookeeper, Schema Registry, PostgreSQL, Redis, Kafka UI
 ```
 
