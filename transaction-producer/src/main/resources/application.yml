@@ -12,6 +12,10 @@ spring:
     # Producer config is defined in KafkaProducerConfig.java (explicit bean)
     # to keep all Kafka producer settings in one place.
 
+app:
+  kafka:
+    schema-registry-url: http://localhost:8081
+
   # ── Redis ─────────────────────────────────────────────────────────
   data:
     redis:

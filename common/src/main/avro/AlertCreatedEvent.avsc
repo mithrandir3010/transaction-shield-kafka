@@ -1,0 +1,15 @@
+{
+  "type": "record",
+  "name": "AlertCreatedEvent",
+  "namespace": "com.transactionshield.avro",
+  "doc": "Kafka wire format for alerts.created topic. Subject: alerts.created-value. Compatibility: BACKWARD",
+  "fields": [
+    {"name": "alertId",         "type": "string"},
+    {"name": "transactionId",   "type": "string"},
+    {"name": "userId",          "type": "string"},
+    {"name": "fraudScore",      "type": "int"},
+    {"name": "riskLevel",       "type": "string"},
+    {"name": "triggeredRules",  "type": {"type": "array", "items": "string"}, "default": []},
+    {"name": "createdAtMillis", "type": "long"}
+  ]
+}

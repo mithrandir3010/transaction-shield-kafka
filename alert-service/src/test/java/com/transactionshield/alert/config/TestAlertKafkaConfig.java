@@ -1,7 +1,9 @@
 package com.transactionshield.alert.config;
 
-import com.transactionshield.common.event.AlertCreatedEvent;
-import com.transactionshield.common.event.ScoredTransactionEvent;
+import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
+import io.confluent.kafka.serializers.KafkaAvroDeserializer;
+import io.confluent.kafka.serializers.KafkaAvroDeserializerConfig;
+import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -12,79 +14,62 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.*;
-import org.springframework.kafka.support.serializer.JsonDeserializer;
-import org.springframework.kafka.support.serializer.JsonSerializer;
 
 import java.util.Map;
 
-/**
- * alert-service integration testleri için Kafka konfigürasyonu.
- *
- * Bean isimlendirme (fraud-engine TestKafkaConfig pattern'ini izler):
- *   ConsumerFactory  bean adı ≠ ContainerFactory bean adı
- *   → BeanDefinitionOverrideException'dan kaçınır.
- *
- *   alertCreatedEventConsumerFactory → ConsumerFactory<String, AlertCreatedEvent>
- *   testAlertCreatedConsumerFactory  → ConcurrentKafkaListenerContainerFactory (AlertCreatedEventCollector)
- *
- *   dlqStringEventConsumerFactory   → ConsumerFactory<String, String>
- *   testDlqConsumerFactory          → ConcurrentKafkaListenerContainerFactory (DlqMessageCollector)
- */
 @TestConfiguration
 public class TestAlertKafkaConfig {
 
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
+    @Value("${app.kafka.schema-registry-url}")
+    private String schemaRegistryUrl;
+
     // ── Test Producer — ScoredTransactionEvent → transactions.scored ──
 
     @Bean
-    KafkaTemplate<String, ScoredTransactionEvent> scoredEventTemplate() {
+    KafkaTemplate<String, com.transactionshield.avro.ScoredTransactionEvent> scoredEventTemplate() {
         return new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(Map.of(
-                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,      bootstrapServers,
-                ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,   StringSerializer.class,
-                ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class,
-                JsonSerializer.ADD_TYPE_INFO_HEADERS,         false
+                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,                bootstrapServers,
+                ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,             StringSerializer.class,
+                ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,           KafkaAvroSerializer.class,
+                AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl
         )));
     }
 
     // ── Test Consumer — alerts.created ────────────────────────────────
 
     @Bean
-    ConsumerFactory<String, AlertCreatedEvent> alertCreatedEventConsumerFactory() {
-        JsonDeserializer<AlertCreatedEvent> deserializer =
-                new JsonDeserializer<>(AlertCreatedEvent.class);
-        deserializer.addTrustedPackages("com.transactionshield.common.event");
-        deserializer.setUseTypeMapperForKey(false);
-
-        return new DefaultKafkaConsumerFactory<>(
-                Map.of(
-                        ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,  bootstrapServers,
-                        ConsumerConfig.GROUP_ID_CONFIG,           "alert-created-test-consumer",
-                        ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,  "earliest",
-                        ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true
-                ),
-                new StringDeserializer(),
-                deserializer
-        );
+    ConsumerFactory<String, com.transactionshield.avro.AlertCreatedEvent> alertCreatedEventConsumerFactory() {
+        return new DefaultKafkaConsumerFactory<>(Map.of(
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,                    bootstrapServers,
+                ConsumerConfig.GROUP_ID_CONFIG,                             "alert-created-test-consumer",
+                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,                    "earliest",
+                ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,                   true,
+                ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,               StringDeserializer.class,
+                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,             KafkaAvroDeserializer.class,
+                AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG,  schemaRegistryUrl,
+                KafkaAvroDeserializerConfig.SPECIFIC_AVRO_READER_CONFIG,    true
+        ));
     }
 
     @Bean
-    ConcurrentKafkaListenerContainerFactory<String, AlertCreatedEvent>
+    ConcurrentKafkaListenerContainerFactory<String, com.transactionshield.avro.AlertCreatedEvent>
     testAlertCreatedConsumerFactory(
-            ConsumerFactory<String, AlertCreatedEvent> alertCreatedEventConsumerFactory) {
-        var factory = new ConcurrentKafkaListenerContainerFactory<String, AlertCreatedEvent>();
+            ConsumerFactory<String, com.transactionshield.avro.AlertCreatedEvent> alertCreatedEventConsumerFactory) {
+        var factory = new ConcurrentKafkaListenerContainerFactory<String, com.transactionshield.avro.AlertCreatedEvent>();
         factory.setConsumerFactory(alertCreatedEventConsumerFactory);
         factory.setConcurrency(1);
         return factory;
     }
 
-    // ── Test Consumer — transactions.dlq (raw string) ─────────────────
+    // ── Test Consumer — transactions.dlq (raw bytes → String) ─────────
 
     @Bean
     ConsumerFactory<String, String> dlqStringEventConsumerFactory() {
         return new DefaultKafkaConsumerFactory<>(
-                Map.of(
+                java.util.Map.of(
                         ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,  bootstrapServers,
                         ConsumerConfig.GROUP_ID_CONFIG,           "dlq-test-consumer",
                         ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,  "earliest",

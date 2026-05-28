@@ -1,0 +1,16 @@
+{
+  "type": "record",
+  "name": "TransactionEvent",
+  "namespace": "com.transactionshield.avro",
+  "doc": "Kafka wire format for transactions.raw topic. Subject: transactions.raw-value. Compatibility: BACKWARD",
+  "fields": [
+    {"name": "transactionId",     "type": "string"},
+    {"name": "idempotencyKey",    "type": "string"},
+    {"name": "userId",            "type": "string"},
+    {"name": "amount",            "type": "string",  "doc": "BigDecimal as plain string, e.g. 1500.0000"},
+    {"name": "currency",          "type": "string"},
+    {"name": "country",           "type": "string"},
+    {"name": "deviceFingerprint", "type": ["null", "string"], "default": null},
+    {"name": "timestampMillis",   "type": "long",    "doc": "Instant.toEpochMilli()"}
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "type": "record",
+  "name": "ScoredTransactionEvent",
+  "namespace": "com.transactionshield.avro",
+  "doc": "Kafka wire format for transactions.scored topic. Subject: transactions.scored-value. Compatibility: BACKWARD",
+  "fields": [
+    {"name": "transactionId",          "type": "string"},
+    {"name": "idempotencyKey",         "type": "string"},
+    {"name": "userId",                 "type": "string"},
+    {"name": "amount",                 "type": "string"},
+    {"name": "currency",               "type": "string"},
+    {"name": "country",                "type": "string"},
+    {"name": "deviceFingerprint",      "type": ["null", "string"], "default": null},
+    {"name": "originalTimestampMillis","type": "long"},
+    {"name": "rawScore",               "type": "int"},
+    {"name": "fraudScore",             "type": "int"},
+    {
+      "name": "riskLevel",
+      "type": {
+        "type": "enum",
+        "name": "RiskLevel",
+        "namespace": "com.transactionshield.avro",
+        "symbols": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+      }
+    },
+    {"name": "triggeredRules", "type": {"type": "array", "items": "string"}, "default": []},
+    {"name": "scoredAtMillis", "type": "long"}
+  ]
+}

@@ -1,5 +1,6 @@
 package com.transactionshield.engine;
 
+import com.transactionshield.common.avro.AvroMapper;
 import com.transactionshield.common.event.TransactionEvent;
 import com.transactionshield.engine.config.TestKafkaConfig;
 import com.transactionshield.engine.support.ScoredEventCollector;
@@ -92,18 +93,18 @@ public abstract class AbstractIntegrationTest {
     // ── Shared Test Beans ────────────────────────────────────────────
 
     @Autowired
-    protected KafkaTemplate<String, TransactionEvent> rawEventTemplate;
+    protected KafkaTemplate<String, com.transactionshield.avro.TransactionEvent> rawEventTemplate;
 
     @Autowired
     protected ScoredEventCollector collector;
 
-    /**
-     * Her test metodundan önce collector kuyruğunu temizle.
-     * Önceki test metodunun ürettiği scored event'ler bir sonraki testi kirletmesin.
-     */
     @BeforeEach
     void clearCollector() {
         collector.clear();
+    }
+
+    protected void publishRaw(TransactionEvent event) throws Exception {
+        rawEventTemplate.send("transactions.raw", event.transactionId(), AvroMapper.toAvro(event)).get();
     }
 
     // ── Builder Helpers ───────────────────────────────────────────────

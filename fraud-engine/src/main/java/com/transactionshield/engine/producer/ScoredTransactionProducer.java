@@ -1,5 +1,6 @@
 package com.transactionshield.engine.producer;
 
+import com.transactionshield.common.avro.AvroMapper;
 import com.transactionshield.common.event.ScoredTransactionEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,7 +15,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class ScoredTransactionProducer {
 
-    private final KafkaTemplate<String, ScoredTransactionEvent> scoredEventKafkaTemplate;
+    private final KafkaTemplate<String, com.transactionshield.avro.ScoredTransactionEvent> scoredEventKafkaTemplate;
 
     @Value("${app.kafka.transactions-scored-topic}")
     private String scoredTopic;
@@ -22,16 +23,9 @@ public class ScoredTransactionProducer {
     @Value("${app.kafka.publish-timeout-seconds:5}")
     private long publishTimeoutSeconds;
 
-    /**
-     * Publishes the scored event synchronously.
-     * Using transactionId as the Kafka partition key ensures all events
-     * for the same transaction land on the same partition (ordering guarantee).
-     *
-     * @throws Exception propagated to the consumer, triggering the DLQ error handler
-     */
     public void publish(ScoredTransactionEvent event) throws Exception {
         scoredEventKafkaTemplate
-                .send(scoredTopic, event.transactionId(), event)
+                .send(scoredTopic, event.transactionId(), AvroMapper.toAvro(event))
                 .get(publishTimeoutSeconds, TimeUnit.SECONDS);
 
         log.info("Scored event published — transactionId={} fraudScore={} riskLevel={} topic={}",

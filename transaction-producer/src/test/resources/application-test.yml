@@ -10,6 +10,8 @@ spring:
 app:
   idempotency:
     ttl-hours: 1      # Testlerde 1 saat yeterli
+  kafka:
+    schema-registry-url: mock://test-registry
 
 logging:
   level:

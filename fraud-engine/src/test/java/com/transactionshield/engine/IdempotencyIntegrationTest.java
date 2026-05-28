@@ -42,8 +42,8 @@ class IdempotencyIntegrationTest extends AbstractIntegrationTest {
         TransactionEvent event = buildEvent("u-idem-001", BigDecimal.valueOf(750), "US");
 
         // When — aynı event iki kez gönderilir
-        rawEventTemplate.send("transactions.raw", event.transactionId(), event).get();
-        rawEventTemplate.send("transactions.raw", event.transactionId(), event).get();
+        publishRaw(event);
+        publishRaw(event);
 
         // Then — birinci event işlenir ve scored'a yazılır
         ScoredTransactionEvent firstScored = collector.poll(EXPECTED_TIMEOUT);
@@ -70,8 +70,8 @@ class IdempotencyIntegrationTest extends AbstractIntegrationTest {
         TransactionEvent event2 = buildEvent(userId, BigDecimal.valueOf(400), "US");
 
         // When
-        rawEventTemplate.send("transactions.raw", event1.transactionId(), event1).get();
-        rawEventTemplate.send("transactions.raw", event2.transactionId(), event2).get();
+        publishRaw(event1);
+        publishRaw(event2);
 
         // Then — her iki event de bağımsız olarak işlenmeli
         ScoredTransactionEvent scored1 = collector.poll(EXPECTED_TIMEOUT);
@@ -93,9 +93,9 @@ class IdempotencyIntegrationTest extends AbstractIntegrationTest {
         TransactionEvent event = buildEvent("u-triple-dup", BigDecimal.valueOf(999), "DE");
 
         // When — üç kez gönder (worst-case at-least-once)
-        rawEventTemplate.send("transactions.raw", event.transactionId(), event).get();
-        rawEventTemplate.send("transactions.raw", event.transactionId(), event).get();
-        rawEventTemplate.send("transactions.raw", event.transactionId(), event).get();
+        publishRaw(event);
+        publishRaw(event);
+        publishRaw(event);
 
         // Then — sadece bir scored event
         ScoredTransactionEvent first  = collector.poll(EXPECTED_TIMEOUT);

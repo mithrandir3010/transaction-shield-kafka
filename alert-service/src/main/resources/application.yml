@@ -24,9 +24,14 @@ spring:
       connection-timeout: 30000
       idle-timeout: 600000
 
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    table: flyway_schema_history_alert_service
+
   jpa:
     hibernate:
-      ddl-auto: validate        # schema managed by infrastructure/postgres/init.sql
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate:
@@ -46,6 +51,7 @@ app:
     transactions-dlq-topic:    transactions.dlq
     alerts-created-topic:      alerts.created
     publish-timeout-seconds:   5
+    schema-registry-url:       http://localhost:8081
 
   alert:
     # Risk levels that trigger an AlertCreatedEvent (downstream notification hook)

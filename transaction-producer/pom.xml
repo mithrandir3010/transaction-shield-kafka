@@ -39,6 +39,12 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
+        <!-- Confluent Avro Serializer + Schema Registry client -->
+        <dependency>
+            <groupId>io.confluent</groupId>
+            <artifactId>kafka-avro-serializer</artifactId>
+        </dependency>
+
         <!-- Redis (Idempotency) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

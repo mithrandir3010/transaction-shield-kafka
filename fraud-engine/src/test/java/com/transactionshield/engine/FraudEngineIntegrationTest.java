@@ -38,7 +38,7 @@ class FraudEngineIntegrationTest extends AbstractIntegrationTest {
         TransactionEvent event = buildEvent("u-ha-001", BigDecimal.valueOf(15_000), "US");
 
         // When
-        rawEventTemplate.send("transactions.raw", event.transactionId(), event).get();
+        publishRaw(event);
 
         // Then
         ScoredTransactionEvent scored = collector.poll(EVENT_TIMEOUT);
@@ -60,7 +60,7 @@ class FraudEngineIntegrationTest extends AbstractIntegrationTest {
         TransactionEvent event = buildEvent("u-bc-001", BigDecimal.valueOf(200), "RU");
 
         // When
-        rawEventTemplate.send("transactions.raw", event.transactionId(), event).get();
+        publishRaw(event);
 
         // Then
         ScoredTransactionEvent scored = collector.poll(EVENT_TIMEOUT);
@@ -80,7 +80,7 @@ class FraudEngineIntegrationTest extends AbstractIntegrationTest {
         TransactionEvent event = buildNightEvent("u-nt-001", BigDecimal.valueOf(100), "US");
 
         // When
-        rawEventTemplate.send("transactions.raw", event.transactionId(), event).get();
+        publishRaw(event);
 
         // Then
         ScoredTransactionEvent scored = collector.poll(EVENT_TIMEOUT);
@@ -100,7 +100,7 @@ class FraudEngineIntegrationTest extends AbstractIntegrationTest {
         TransactionEvent event = buildEvent("u-multi-001", BigDecimal.valueOf(15_000), "RU");
 
         // When
-        rawEventTemplate.send("transactions.raw", event.transactionId(), event).get();
+        publishRaw(event);
 
         // Then
         ScoredTransactionEvent scored = collector.poll(EVENT_TIMEOUT);
@@ -127,7 +127,7 @@ class FraudEngineIntegrationTest extends AbstractIntegrationTest {
         TransactionEvent event = buildEvent("u-clean-" + UUID.randomUUID(), BigDecimal.valueOf(500), "US");
 
         // When
-        rawEventTemplate.send("transactions.raw", event.transactionId(), event).get();
+        publishRaw(event);
 
         // Then
         ScoredTransactionEvent scored = collector.poll(EVENT_TIMEOUT);

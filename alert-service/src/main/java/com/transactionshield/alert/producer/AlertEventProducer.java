@@ -1,6 +1,7 @@
 package com.transactionshield.alert.producer;
 
 import com.transactionshield.alert.entity.Alert;
+import com.transactionshield.common.avro.AvroMapper;
 import com.transactionshield.common.event.AlertCreatedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,18 +14,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Publishes AlertCreatedEvent to `alerts.created` for HIGH/CRITICAL alerts.
- *
- * Downstream consumers (email service, SMS gateway, push notification) subscribe
- * to this topic without any coupling to the alert-service implementation.
- */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class AlertEventProducer {
 
-    private final KafkaTemplate<String, AlertCreatedEvent> alertCreatedKafkaTemplate;
+    private final KafkaTemplate<String, com.transactionshield.avro.AlertCreatedEvent> alertCreatedKafkaTemplate;
 
     @Value("${app.kafka.alerts-created-topic}")
     private String alertsCreatedTopic;
@@ -48,7 +43,7 @@ public class AlertEventProducer {
         );
 
         alertCreatedKafkaTemplate
-                .send(alertsCreatedTopic, alert.getTransactionId(), event)
+                .send(alertsCreatedTopic, alert.getTransactionId(), AvroMapper.toAvro(event))
                 .get(publishTimeoutSeconds, TimeUnit.SECONDS);
 
         log.info("AlertCreatedEvent published — alertId={} transactionId={} riskLevel={} topic={}",

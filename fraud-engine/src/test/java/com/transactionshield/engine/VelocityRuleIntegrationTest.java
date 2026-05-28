@@ -57,8 +57,7 @@ class VelocityRuleIntegrationTest extends AbstractIntegrationTest {
         for (int i = 0; i < 6; i++) {
             TransactionEvent event = buildEvent(userId, BigDecimal.valueOf(100), "US");
 
-            // Publish ve Kafka onayını bekle (at-least-once)
-            rawEventTemplate.send("transactions.raw", event.transactionId(), event).get();
+            publishRaw(event);
 
             // Scored event'i bekle — Redis ZSET bu event için güncellendikten SONRA gelir
             ScoredTransactionEvent scored = collector.poll(EVENT_TIMEOUT);
@@ -106,14 +105,11 @@ class VelocityRuleIntegrationTest extends AbstractIntegrationTest {
 
         // userA: 4 işlem → velocity tetiklenir
         for (int i = 0; i < 4; i++) {
-            rawEventTemplate.send("transactions.raw",
-                    buildEvent(userA, BigDecimal.valueOf(100), "US").transactionId(),
-                    buildEvent(userA, BigDecimal.valueOf(100), "US")).get();
+            publishRaw(buildEvent(userA, BigDecimal.valueOf(100), "US"));
         }
 
         // userB: 1 işlem — userA'nın penceresi bunu etkilememeli
-        TransactionEvent userBEvent = buildEvent(userB, BigDecimal.valueOf(100), "US");
-        rawEventTemplate.send("transactions.raw", userBEvent.transactionId(), userBEvent).get();
+        publishRaw(buildEvent(userB, BigDecimal.valueOf(100), "US"));
 
         // 5 scored event topla
         List<ScoredTransactionEvent> allScored = collector.pollN(5, EVENT_TIMEOUT);

@@ -1,5 +1,6 @@
 package com.transactionshield.alert.support;
 
+import com.transactionshield.common.avro.AvroMapper;
 import com.transactionshield.common.event.AlertCreatedEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -10,10 +11,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-/**
- * alerts.created topic'ini dinleyen test consumer.
- * AlertEventProducer'ın HIGH/CRITICAL risk için doğru event publish ettiğini doğrular.
- */
 @Component
 @Slf4j
 public class AlertCreatedEventCollector {
@@ -25,7 +22,8 @@ public class AlertCreatedEventCollector {
             groupId          = "alert-created-test-consumer",
             containerFactory = "testAlertCreatedConsumerFactory"
     )
-    public void collect(AlertCreatedEvent event) {
+    public void collect(com.transactionshield.avro.AlertCreatedEvent avroEvent) {
+        AlertCreatedEvent event = AvroMapper.fromAvro(avroEvent);
         log.info("[TEST COLLECTOR] AlertCreatedEvent — transactionId={} riskLevel={}",
                 event.transactionId(), event.riskLevel());
         queue.add(event);

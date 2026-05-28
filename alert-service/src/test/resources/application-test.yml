@@ -17,6 +17,8 @@ spring:
       fail-on-unknown-properties: false
 
 app:
+  kafka:
+    schema-registry-url: mock://test-registry
   alert:
     notify-risk-levels: HIGH,CRITICAL
 

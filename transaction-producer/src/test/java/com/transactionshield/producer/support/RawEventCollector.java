@@ -1,5 +1,6 @@
 package com.transactionshield.producer.support;
 
+import com.transactionshield.common.avro.AvroMapper;
 import com.transactionshield.common.event.TransactionEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -10,10 +11,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-/**
- * transactions.raw topic'ini dinleyen test consumer.
- * TransactionProducerService'in Kafka'ya doğru event publish ettiğini doğrular.
- */
 @Component
 @Slf4j
 public class RawEventCollector {
@@ -25,7 +22,8 @@ public class RawEventCollector {
             groupId          = "producer-test-consumer",
             containerFactory = "testRawConsumerFactory"
     )
-    public void collect(TransactionEvent event) {
+    public void collect(com.transactionshield.avro.TransactionEvent avroEvent) {
+        TransactionEvent event = AvroMapper.fromAvro(avroEvent);
         log.info("[TEST COLLECTOR] Raw event received — transactionId={}", event.transactionId());
         queue.add(event);
     }

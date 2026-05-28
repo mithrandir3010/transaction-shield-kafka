@@ -5,17 +5,12 @@
 spring:
   jpa:
     hibernate:
-      # fraud-engine henüz JPA entity içermiyor; validate yerine none seçerek
-      # Hibernate'in boş schema'yı kontrol etmesini engelliyoruz.
-      ddl-auto: none
+      ddl-auto: validate
     show-sql: false
 
-  # Flyway testlerde devre dışı — schema Testcontainers PostgreSQL'e boş gelir,
-  # fraud-engine için migration script tanımlı değil.
-  flyway:
-    enabled: false
-
 app:
+  kafka:
+    schema-registry-url: mock://test-registry
   rules:
     velocity:
       window-seconds: 60

@@ -3,6 +3,7 @@ package com.transactionshield.alert;
 import com.transactionshield.alert.config.TestAlertKafkaConfig;
 import com.transactionshield.alert.support.AlertCreatedEventCollector;
 import com.transactionshield.alert.support.DlqMessageCollector;
+import com.transactionshield.common.avro.AvroMapper;
 import com.transactionshield.common.enums.RiskLevel;
 import com.transactionshield.common.event.ScoredTransactionEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +31,7 @@ import java.util.UUID;
  *
  * Konteyner:
  *   - Kafka (Testcontainers)      → transactions.scored, alerts.created, transactions.dlq
- *   - PostgreSQL (Testcontainers) → alerts tablosu, init.sql ile oluşturulur
+ *   - PostgreSQL (Testcontainers) → Flyway V1__ migration ile schema oluşturulur
  *
  * Paralel başlatma: Startables.deepStart() ile her iki konteyner eş zamanlı başlar.
  */
@@ -49,8 +50,7 @@ public abstract class AbstractAlertIntegrationTest {
             new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"))
                     .withDatabaseName("transactionshield")
                     .withUsername("tsuser")
-                    .withPassword("tspassword")
-                    .withInitScript("db/init.sql");  // src/test/resources/db/init.sql
+                    .withPassword("tspassword");
 
     static {
         Startables.deepStart(KAFKA, POSTGRES).join();
@@ -64,7 +64,7 @@ public abstract class AbstractAlertIntegrationTest {
         registry.add("spring.datasource.password",     POSTGRES::getPassword);
     }
 
-    @Autowired protected KafkaTemplate<String, ScoredTransactionEvent> scoredEventTemplate;
+    @Autowired protected KafkaTemplate<String, com.transactionshield.avro.ScoredTransactionEvent> scoredEventTemplate;
     @Autowired protected AlertCreatedEventCollector alertCreatedCollector;
     @Autowired protected DlqMessageCollector dlqCollector;
 
@@ -72,6 +72,10 @@ public abstract class AbstractAlertIntegrationTest {
     void clearCollectors() {
         alertCreatedCollector.clear();
         dlqCollector.clear();
+    }
+
+    protected void publishScored(ScoredTransactionEvent event) throws Exception {
+        scoredEventTemplate.send("transactions.scored", event.transactionId(), AvroMapper.toAvro(event)).get();
     }
 
     // ── Builder Helpers ───────────────────────────────────────────────

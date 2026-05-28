@@ -4,6 +4,7 @@ import com.transactionshield.alert.config.TestAlertKafkaConfig;
 import com.transactionshield.alert.exception.AlertPersistenceException;
 import com.transactionshield.alert.service.AlertService;
 import com.transactionshield.alert.support.DlqMessageCollector;
+import com.transactionshield.common.avro.AvroMapper;
 import com.transactionshield.common.enums.RiskLevel;
 import com.transactionshield.common.event.ScoredTransactionEvent;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -80,8 +81,7 @@ class DlqRoutingIntegrationTest {
             new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"))
                     .withDatabaseName("transactionshield")
                     .withUsername("tsuser")
-                    .withPassword("tspassword")
-                    .withInitScript("db/init.sql");
+                    .withPassword("tspassword");
 
     static {
         Startables.deepStart(KAFKA, POSTGRES).join();
@@ -124,7 +124,7 @@ class DlqRoutingIntegrationTest {
     // Sadece Kafka-level retry + DLQ davranışını test eder.
     @MockBean AlertService alertService;
 
-    @Autowired KafkaTemplate<String, ScoredTransactionEvent> scoredEventTemplate;
+    @Autowired KafkaTemplate<String, com.transactionshield.avro.ScoredTransactionEvent> scoredEventTemplate;
     @Autowired DlqMessageCollector dlqCollector;
 
     @BeforeEach
@@ -139,7 +139,7 @@ class DlqRoutingIntegrationTest {
     @DisplayName("Kalıcı AlertService hatası → Kafka retry'ları tüketilir → mesaj DLQ'ya yönlenir")
     void whenPersistentAlertServiceFailure_thenMessageRoutedToDlq() throws Exception {
         String txId = "dlq-test-" + UUID.randomUUID();
-        scoredEventTemplate.send("transactions.scored", txId, simpleEvent(txId)).get();
+        scoredEventTemplate.send("transactions.scored", txId, AvroMapper.toAvro(simpleEvent(txId))).get();
 
         // FixedBackOff(0, 2): 3 Kafka deneme, 0ms bekleme → hızlı DLQ yönlendirme
         ConsumerRecord<String, String> dlqRecord = dlqCollector.poll(Duration.ofSeconds(30));
@@ -155,7 +155,7 @@ class DlqRoutingIntegrationTest {
     @DisplayName("DLQ mesajı — DeadLetterPublishingRecoverer header'larını ekler")
     void whenMessageInDlq_exceptionHeadersPresent() throws Exception {
         String txId = "dlq-hdr-" + UUID.randomUUID();
-        scoredEventTemplate.send("transactions.scored", txId, simpleEvent(txId)).get();
+        scoredEventTemplate.send("transactions.scored", txId, AvroMapper.toAvro(simpleEvent(txId))).get();
 
         ConsumerRecord<String, String> dlqRecord = dlqCollector.poll(Duration.ofSeconds(30));
         assertThat(dlqRecord).isNotNull();
@@ -173,8 +173,8 @@ class DlqRoutingIntegrationTest {
         String txId1 = "dlq-m1-" + UUID.randomUUID();
         String txId2 = "dlq-m2-" + UUID.randomUUID();
 
-        scoredEventTemplate.send("transactions.scored", txId1, simpleEvent(txId1)).get();
-        scoredEventTemplate.send("transactions.scored", txId2, simpleEvent(txId2)).get();
+        scoredEventTemplate.send("transactions.scored", txId1, AvroMapper.toAvro(simpleEvent(txId1))).get();
+        scoredEventTemplate.send("transactions.scored", txId2, AvroMapper.toAvro(simpleEvent(txId2))).get();
 
         ConsumerRecord<String, String> dlq1 = dlqCollector.poll(Duration.ofSeconds(30));
         ConsumerRecord<String, String> dlq2 = dlqCollector.poll(Duration.ofSeconds(30));

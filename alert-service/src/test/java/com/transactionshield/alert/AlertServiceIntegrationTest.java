@@ -42,7 +42,7 @@ class AlertServiceIntegrationTest extends AbstractAlertIntegrationTest {
         ScoredTransactionEvent event = buildScoredEvent(
                 txId, RiskLevel.HIGH, 80, List.of("HIGH_AMOUNT"));
 
-        scoredEventTemplate.send("transactions.scored", txId, event).get();
+        publishScored(event);
 
         // AlertCreatedEvent bekliyoruz
         AlertCreatedEvent alertEvent = alertCreatedCollector.poll(WAIT);
@@ -66,7 +66,7 @@ class AlertServiceIntegrationTest extends AbstractAlertIntegrationTest {
         ScoredTransactionEvent event = buildScoredEvent(
                 txId, RiskLevel.CRITICAL, 100, List.of("BLACKLISTED_COUNTRY"));
 
-        scoredEventTemplate.send("transactions.scored", txId, event).get();
+        publishScored(event);
 
         AlertCreatedEvent alertEvent = alertCreatedCollector.poll(WAIT);
         assertThat(alertEvent).isNotNull();
@@ -83,7 +83,7 @@ class AlertServiceIntegrationTest extends AbstractAlertIntegrationTest {
         String txId = "e2e-low-" + UUID.randomUUID();
         ScoredTransactionEvent event = buildScoredEvent(txId, RiskLevel.LOW, 0, List.of());
 
-        scoredEventTemplate.send("transactions.scored", txId, event).get();
+        publishScored(event);
 
         // Kısa bekleme — AlertCreatedEvent gelmemeli
         AlertCreatedEvent alertEvent = alertCreatedCollector.poll(NEGATIVE_WAIT);
@@ -102,7 +102,7 @@ class AlertServiceIntegrationTest extends AbstractAlertIntegrationTest {
         ScoredTransactionEvent event = buildScoredEvent(
                 txId, RiskLevel.MEDIUM, 50, List.of("HIGH_AMOUNT"));
 
-        scoredEventTemplate.send("transactions.scored", txId, event).get();
+        publishScored(event);
 
         AlertCreatedEvent alertEvent = alertCreatedCollector.poll(NEGATIVE_WAIT);
         assertThat(alertEvent).as("MEDIUM risk için AlertCreatedEvent olmamalı").isNull();
@@ -119,8 +119,8 @@ class AlertServiceIntegrationTest extends AbstractAlertIntegrationTest {
                 txId, RiskLevel.HIGH, 80, List.of("HIGH_AMOUNT"));
 
         // Aynı event iki kez publish (Kafka at-least-once simülasyonu)
-        scoredEventTemplate.send("transactions.scored", txId, event).get();
-        scoredEventTemplate.send("transactions.scored", txId, event).get();
+        publishScored(event);
+        publishScored(event);
 
         // İlk AlertCreatedEvent bekliyoruz
         AlertCreatedEvent first = alertCreatedCollector.poll(WAIT);
@@ -150,7 +150,7 @@ class AlertServiceIntegrationTest extends AbstractAlertIntegrationTest {
                 java.time.Instant.now()
         );
 
-        scoredEventTemplate.send("transactions.scored", txId, event).get();
+        publishScored(event);
 
         AlertCreatedEvent alertEvent = alertCreatedCollector.poll(WAIT);
         assertThat(alertEvent).isNotNull();

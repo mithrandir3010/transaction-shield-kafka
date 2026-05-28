@@ -52,6 +52,12 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Confluent Avro Serializer + Schema Registry client -->
+        <dependency>
+            <groupId>io.confluent</groupId>
+            <artifactId>kafka-avro-serializer</artifactId>
+        </dependency>
+
         <!-- Flyway (DB migrations) -->
         <dependency>
             <groupId>org.flywaydb</groupId>

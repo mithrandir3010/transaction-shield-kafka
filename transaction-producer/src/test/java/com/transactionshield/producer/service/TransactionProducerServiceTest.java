@@ -2,7 +2,6 @@ package com.transactionshield.producer.service;
 
 import com.transactionshield.common.dto.TransactionRequest;
 import com.transactionshield.common.dto.TransactionResponse;
-import com.transactionshield.common.event.TransactionEvent;
 import com.transactionshield.producer.exception.DuplicateTransactionException;
 import com.transactionshield.producer.exception.KafkaPublishException;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,7 +30,7 @@ import static org.mockito.Mockito.*;
 class TransactionProducerServiceTest {
 
     @Mock IdempotencyService idempotencyService;
-    @Mock KafkaTemplate<String, TransactionEvent> kafkaTemplate;
+    @Mock KafkaTemplate<String, com.transactionshield.avro.TransactionEvent> kafkaTemplate;
     @InjectMocks TransactionProducerService producerService;
 
     @BeforeEach
@@ -76,7 +75,7 @@ class TransactionProducerServiceTest {
         TransactionRequest request = validRequest("key-kafka-fail");
         given(idempotencyService.tryAcquire("key-kafka-fail")).willReturn(true);
 
-        CompletableFuture<SendResult<String, TransactionEvent>> failedFuture = new CompletableFuture<>();
+        CompletableFuture<SendResult<String, com.transactionshield.avro.TransactionEvent>> failedFuture = new CompletableFuture<>();
         failedFuture.completeExceptionally(new RuntimeException("Broker unreachable"));
         given(kafkaTemplate.send(any(), any(), any())).willReturn(failedFuture);
 
@@ -120,13 +119,13 @@ class TransactionProducerServiceTest {
                 eq("transactions.raw"),
                 any(String.class),
                 argThat(event ->
-                        event.userId().equals("user-99") &&
-                        event.amount().compareTo(new BigDecimal("12345.67")) == 0 &&
-                        event.currency().equals("EUR") &&
-                        event.country().equals("DE") &&
-                        event.deviceFingerprint().equals("fp-device") &&
-                        event.transactionId() != null &&
-                        event.timestamp() != null
+                        event.getUserId().equals("user-99") &&
+                        new BigDecimal(event.getAmount()).compareTo(new BigDecimal("12345.67")) == 0 &&
+                        event.getCurrency().equals("EUR") &&
+                        event.getCountry().equals("DE") &&
+                        event.getDeviceFingerprint().equals("fp-device") &&
+                        event.getTransactionId() != null &&
+                        event.getTimestampMillis() > 0
                 )
         );
     }
