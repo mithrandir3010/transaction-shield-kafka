@@ -5,6 +5,7 @@ import com.transactionshield.alert.exception.AlertPersistenceException;
 import com.transactionshield.alert.repository.AlertRepository;
 import com.transactionshield.common.enums.RiskLevel;
 import com.transactionshield.common.event.ScoredTransactionEvent;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +46,7 @@ import static org.mockito.Mockito.verify;
 class AlertServiceRetryTest {
 
     @MockBean AlertRepository alertRepository;
+    @MockBean MeterRegistry   meterRegistry;
     @Autowired AlertService alertService;
 
     @Test
