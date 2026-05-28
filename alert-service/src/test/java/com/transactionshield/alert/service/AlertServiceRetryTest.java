@@ -43,7 +43,9 @@ import static org.mockito.Mockito.verify;
 @Import({AlertService.class, RetryConfig.class})
 @TestPropertySource(properties = {
         "app.alert.notify-risk-levels=HIGH,CRITICAL",
-        "spring.flyway.enabled=false"   // H2 does not support CREATE EXTENSION (uuid-ossp)
+        "spring.flyway.enabled=false",
+        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect"
 })
 @DisplayName("AlertService @Retryable — Spring Retry davranış testleri")
 class AlertServiceRetryTest {
