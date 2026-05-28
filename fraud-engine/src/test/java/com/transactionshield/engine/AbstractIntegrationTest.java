@@ -16,8 +16,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.lifecycle.Startables;
 import org.testcontainers.utility.DockerImageName;
 
@@ -44,25 +42,25 @@ import java.util.UUID;
  *   Çok sayıda test sınıfı olduğunda bu, Docker overhead'i önemli ölçüde azaltır.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-@Testcontainers
 @ActiveProfiles("test")
 @Import(TestKafkaConfig.class)
 public abstract class AbstractIntegrationTest {
 
-    // ── Containers ───────────────────────────────────────────────────
+    // ── Containers — Singleton Pattern ───────────────────────────────
+    // @Testcontainers + @Container kullanılmıyor: JUnit extension her test
+    // sınıfı sonunda static container'ları durdurur → sonraki sınıf yeni
+    // portlarla restart eder → Spring cached context eski portları bilir.
+    // Çözüm: static initializer ile tek kez başlat, Ryuk JVM sonunda temizler.
 
-    @Container
     static final KafkaContainer KAFKA =
             new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.7.0"));
 
-    @Container
     static final PostgreSQLContainer<?> POSTGRES =
             new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"))
                     .withDatabaseName("transactionshield")
                     .withUsername("tsuser")
                     .withPassword("tspassword");
 
-    @Container
     @SuppressWarnings("resource")
     static final GenericContainer<?> REDIS =
             new GenericContainer<>(DockerImageName.parse("redis:7.4-alpine"))
