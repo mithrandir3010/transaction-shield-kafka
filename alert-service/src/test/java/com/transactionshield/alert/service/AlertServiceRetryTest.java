@@ -5,7 +5,9 @@ import com.transactionshield.alert.exception.AlertPersistenceException;
 import com.transactionshield.alert.repository.AlertRepository;
 import com.transactionshield.common.enums.RiskLevel;
 import com.transactionshield.common.event.ScoredTransactionEvent;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +27,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -56,6 +61,14 @@ class AlertServiceRetryTest {
     @MockBean AlertRepository alertRepository;
     @MockBean MeterRegistry   meterRegistry;
     @Autowired AlertService alertService;
+
+    @BeforeEach
+    void configureMeterRegistry() {
+        // MeterRegistry mock returns null by default; stub counter() so that
+        // the increment() call inside saveAlert() does not throw NPE on success paths.
+        Counter counter = mock(Counter.class);
+        lenient().when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
+    }
 
     @Test
     @DisplayName("DataAccessException → 3 deneme yapılır (1 orijinal + 2 retry)")
