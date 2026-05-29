@@ -1,1 +1,28 @@
 CLAUDE.md
+
+# Environment / secrets — never commit
+.env
+.env.*
+*.env
+
+# Maven build output
+target/
+*/target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker override (local-only overrides)
+docker-compose.override.yml
