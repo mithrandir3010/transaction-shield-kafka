@@ -1,15 +1,21 @@
 package com.transactionshield.engine.config;
 
+import com.transactionshield.common.dlq.DlqHeaders;
+import com.transactionshield.engine.dlq.ErrorClassifier;
 import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 import io.confluent.kafka.serializers.KafkaAvroDeserializerConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.internals.RecordHeader;
+import org.apache.kafka.common.header.internals.RecordHeaders;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
@@ -20,6 +26,7 @@ import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.util.backoff.ExponentialBackOff;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 @Configuration
@@ -38,6 +45,7 @@ public class KafkaConsumerConfig {
     @Value("${app.kafka.schema-registry-url}")
     private String schemaRegistryUrl;
 
+    // ── Main consumer — typed for TransactionEvent (Avro) ─────────────
     @Bean
     public ConsumerFactory<String, com.transactionshield.avro.TransactionEvent> consumerFactory() {
         return new DefaultKafkaConsumerFactory<>(Map.of(
@@ -53,26 +61,57 @@ public class KafkaConsumerConfig {
         ));
     }
 
+    // ── DLQ consumer — raw bytes (handles mixed message types from any service) ──
+    @Bean
+    public ConsumerFactory<String, byte[]> dlqConsumerFactory() {
+        return new DefaultKafkaConsumerFactory<>(Map.of(
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,    bootstrapServers,
+                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,    "earliest",
+                ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,   false,
+                ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,   StringDeserializer.class,
+                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class
+                // group.id is set per-listener via @KafkaListener.groupId
+        ));
+    }
+
+    // ── Error handler with enriched DLQ headers ────────────────────────
     @Bean
     public DefaultErrorHandler errorHandler(KafkaTemplate<String, Object> dlqKafkaTemplate) {
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(
                 dlqKafkaTemplate,
                 (record, ex) -> {
-                    log.error("Publishing to DLQ — topic={} key={} cause={}",
-                            dlqTopic, record.key(), ex.getMessage());
+                    log.error("Publishing to DLQ — topic={} key={} category={} cause={}",
+                            dlqTopic, record.key(), ErrorClassifier.classify(ex), ex.getMessage());
                     return new TopicPartition(dlqTopic, -1);
                 }
         );
+
+        // Enrich DLQ messages with error taxonomy and replay tracking headers
+        recoverer.setHeadersFunction((record, ex) -> {
+            RecordHeaders headers = new RecordHeaders();
+            headers.add(new RecordHeader(
+                    DlqHeaders.ERROR_CATEGORY,
+                    ErrorClassifier.classify(ex).name().getBytes(StandardCharsets.UTF_8)));
+            headers.add(new RecordHeader(
+                    DlqHeaders.REPLAY_COUNT,
+                    "0".getBytes(StandardCharsets.UTF_8)));
+            return headers;
+        });
 
         ExponentialBackOff backOff = new ExponentialBackOff(1_000L, 2.0);
         backOff.setMaxAttempts(3);
         backOff.setMaxInterval(8_000L);
 
         DefaultErrorHandler handler = new DefaultErrorHandler(recoverer, backOff);
+        // FATAL — bypass retry entirely, route directly to DLQ
         handler.addNotRetryableExceptions(DeserializationException.class);
+        // NON_RETRYABLE — business rejections, retry always produces the same result
+        handler.addNotRetryableExceptions(DataIntegrityViolationException.class);
+        handler.addNotRetryableExceptions(IllegalArgumentException.class);
         return handler;
     }
 
+    // ── Listener container factories ───────────────────────────────────
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, com.transactionshield.avro.TransactionEvent>
     kafkaListenerContainerFactory(
@@ -84,6 +123,17 @@ public class KafkaConsumerConfig {
         factory.setCommonErrorHandler(errorHandler);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
         factory.setConcurrency(3);
+        return factory;
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, byte[]>
+    dlqListenerContainerFactory(ConsumerFactory<String, byte[]> dlqConsumerFactory) {
+
+        var factory = new ConcurrentKafkaListenerContainerFactory<String, byte[]>();
+        factory.setConsumerFactory(dlqConsumerFactory);
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        factory.setConcurrency(1); // single-partition DLQ topic
         return factory;
     }
 }
