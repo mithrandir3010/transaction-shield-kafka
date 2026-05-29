@@ -23,6 +23,17 @@ ALTER TABLE fraud_rules
 ALTER TABLE fraud_rules DROP CONSTRAINT fraud_rules_rule_code_key;
 ALTER TABLE fraud_rules ADD CONSTRAINT uq_fraud_rules_code_variant UNIQUE (rule_code, variant);
 
+-- Correct score_weight values to match business logic.
+-- V2 seeded approximate/placeholder weights that never matched the hard-coded
+-- rule constants. Now that rules read score_weight from DB, the DB must be
+-- the authoritative source. Values are derived from RiskLevel thresholds:
+--   LOW <30, MEDIUM 30-59, HIGH 60-89, CRITICAL 90-100
+UPDATE fraud_rules SET score_weight = 50  WHERE rule_code = 'HIGH_AMOUNT';         -- MEDIUM tier alone
+UPDATE fraud_rules SET score_weight = 100 WHERE rule_code = 'BLACKLISTED_COUNTRY'; -- CRITICAL alone (capped)
+UPDATE fraud_rules SET score_weight = 20  WHERE rule_code = 'SUSPICIOUS_HOUR';     -- LOW tier alone
+-- VELOCITY_CHECK: score_weight is informational; actual tier scores (40/80)
+-- come from medium_score / high_score parameters set below.
+
 -- Seed parameters for every existing STABLE rule
 UPDATE fraud_rules
 SET parameters = '{"threshold": "10000"}'
