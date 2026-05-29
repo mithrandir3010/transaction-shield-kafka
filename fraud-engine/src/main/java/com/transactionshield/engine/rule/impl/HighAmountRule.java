@@ -2,19 +2,22 @@ package com.transactionshield.engine.rule.impl;
 
 import com.transactionshield.common.event.TransactionEvent;
 import com.transactionshield.engine.rule.FraudRule;
+import com.transactionshield.engine.rule.RuleConfig;
 import com.transactionshield.engine.rule.RuleResult;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 
 /**
- * Flags transactions whose amount exceeds a configurable threshold.
+ * Flags transactions whose amount exceeds the configured threshold.
  *
- * Score: +50
- * Config: app.rules.high-amount.threshold (default 10,000)
+ * DB parameters (fraud_rules.parameters JSONB):
+ *   threshold — amount above which the rule fires (default: 10 000)
+ *
+ * score_weight and threshold can be changed in the DB; the engine picks up
+ * the new values on the next config refresh (default every 5 minutes).
  */
 @Component
 @Order(1)
@@ -22,20 +25,17 @@ import java.math.BigDecimal;
 public class HighAmountRule implements FraudRule {
 
     private static final String RULE_CODE = "HIGH_AMOUNT";
-    private static final int    SCORE     = 50;
-
-    @Value("${app.rules.high-amount.threshold:10000}")
-    private BigDecimal threshold;
 
     @Override
-    public RuleResult evaluate(TransactionEvent event) {
+    public RuleResult evaluate(TransactionEvent event, RuleConfig config) {
+        BigDecimal threshold = config.param("threshold", BigDecimal.valueOf(10_000));
         boolean exceeded = event.amount().compareTo(threshold) > 0;
 
         if (exceeded) {
-            log.debug("[{}] TRIGGERED — amount={} threshold={} transactionId={}",
-                    RULE_CODE, event.amount(), threshold, event.transactionId());
+            log.debug("[{}] TRIGGERED — amount={} threshold={} variant={} transactionId={}",
+                    RULE_CODE, event.amount(), threshold, config.variant(), event.transactionId());
             return RuleResult.triggered(
-                    RULE_CODE, SCORE,
+                    RULE_CODE, config.scoreWeight(),
                     "Amount %s exceeds threshold %s".formatted(event.amount(), threshold)
             );
         }

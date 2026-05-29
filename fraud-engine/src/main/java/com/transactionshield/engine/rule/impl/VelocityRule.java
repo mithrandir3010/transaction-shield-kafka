@@ -2,30 +2,26 @@ package com.transactionshield.engine.rule.impl;
 
 import com.transactionshield.common.event.TransactionEvent;
 import com.transactionshield.engine.rule.FraudRule;
+import com.transactionshield.engine.rule.RuleConfig;
 import com.transactionshield.engine.rule.RuleResult;
 import com.transactionshield.engine.service.VelocityCheckService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * Velocity Check — Redis Sliding Window tabanlı hız kontrolü.
+ * Two-tier velocity check using Redis sliding window.
  *
- * Bir kullanıcının belirli bir zaman penceresinde çok fazla işlem
- * yapmasını iki kademeli eşik ile tespit eder.
+ * DB parameters (fraud_rules.parameters JSONB):
+ *   window_seconds   — sliding window width (default: 60)
+ *   medium_threshold — count > this fires medium tier (default: 3)
+ *   high_threshold   — count > this fires high tier   (default: 5)
+ *   medium_score     — score for medium tier           (default: 40)
+ *   high_score       — score for high tier             (default: 80)
  *
- * Puan tablosu (pencere: 60 sn):
- *   count <= 3              → tetiklenmez
- *   count  > 3  && <= 5    → +40 puan  (şüpheli hız)
- *   count  > 5             → +80 puan  (yüksek hız, fraud olasılığı yüksek)
- *
- * Tüm eşik ve skor değerleri application.yml'den okunur →
- * yeniden deploy gerekmeden tune edilebilir.
- *
- * @Order(4): Mevcut 3 kuraldan sonra çalışır.
- * FraudRuleEngine'e hiçbir değişiklik gerekmez — sadece @Component olması yeterli.
+ * score_weight in DB is informational for this rule; actual scores come from
+ * medium_score and high_score parameters to support the two-tier design.
  */
 @Component
 @Order(4)
@@ -37,54 +33,36 @@ public class VelocityRule implements FraudRule {
 
     private final VelocityCheckService velocityCheckService;
 
-    // ── Konfigürasyon (application.yml'den, runtime'da override edilebilir) ──
-
-    @Value("${app.rules.velocity.window-seconds:60}")
-    private long windowSeconds;
-
-    @Value("${app.rules.velocity.medium-threshold:3}")
-    private int mediumThreshold;   // Bu eşiği AŞARSA medium score
-
-    @Value("${app.rules.velocity.high-threshold:5}")
-    private int highThreshold;     // Bu eşiği AŞARSA high score
-
-    @Value("${app.rules.velocity.medium-score:40}")
-    private int mediumScore;
-
-    @Value("${app.rules.velocity.high-score:80}")
-    private int highScore;
-
     @Override
-    public RuleResult evaluate(TransactionEvent event) {
-        long windowMs    = windowSeconds * 1_000L;
-        long ttlSeconds  = windowSeconds * 2;    // key TTL = pencere * 2 (güvenlik marjı)
+    public RuleResult evaluate(TransactionEvent event, RuleConfig config) {
+        long windowSeconds   = config.param("window_seconds",   60L);
+        int  mediumThreshold = config.param("medium_threshold", 3);
+        int  highThreshold   = config.param("high_threshold",   5);
+        int  mediumScore     = config.param("medium_score",     40);
+        int  highScore       = config.param("high_score",       80);
+
+        long windowMs   = windowSeconds * 1_000L;
+        long ttlSeconds = windowSeconds * 2;
 
         int count = velocityCheckService.countInWindow(
-                event.userId(),
-                event.transactionId(),
-                windowMs,
-                ttlSeconds
-        );
+                event.userId(), event.transactionId(), windowMs, ttlSeconds);
 
-        // ── Yüksek hız (count > 5) ──────────────────────────────────
         if (count > highThreshold) {
-            String reason = "%d işlem %d sn pencerede (yüksek eşik: %d)"
-                    .formatted(count, windowSeconds, highThreshold);
-            log.debug("[{}] HIGH TRIGGERED — userId={} count={} score={}",
-                    RULE_CODE, event.userId(), count, highScore);
-            return RuleResult.triggered(RULE_CODE, highScore, reason);
+            log.debug("[{}] HIGH — userId={} count={} score={} variant={}",
+                    RULE_CODE, event.userId(), count, highScore, config.variant());
+            return RuleResult.triggered(RULE_CODE, highScore,
+                    "%d tx in %ds window (high threshold: >%d)"
+                            .formatted(count, windowSeconds, highThreshold));
         }
 
-        // ── Orta hız (count > 3 && count <= 5) ─────────────────────
         if (count > mediumThreshold) {
-            String reason = "%d işlem %d sn pencerede (orta eşik: %d)"
-                    .formatted(count, windowSeconds, mediumThreshold);
-            log.debug("[{}] MEDIUM TRIGGERED — userId={} count={} score={}",
-                    RULE_CODE, event.userId(), count, mediumScore);
-            return RuleResult.triggered(RULE_CODE, mediumScore, reason);
+            log.debug("[{}] MEDIUM — userId={} count={} score={} variant={}",
+                    RULE_CODE, event.userId(), count, mediumScore, config.variant());
+            return RuleResult.triggered(RULE_CODE, mediumScore,
+                    "%d tx in %ds window (medium threshold: >%d)"
+                            .formatted(count, windowSeconds, mediumThreshold));
         }
 
-        // ── Normal hız ───────────────────────────────────────────────
         log.debug("[{}] not triggered — userId={} count={}", RULE_CODE, event.userId(), count);
         return RuleResult.notTriggered(RULE_CODE);
     }
