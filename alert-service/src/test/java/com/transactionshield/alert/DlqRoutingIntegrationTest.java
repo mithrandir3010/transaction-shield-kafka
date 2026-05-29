@@ -9,6 +9,8 @@ import com.transactionshield.common.enums.RiskLevel;
 import com.transactionshield.common.event.ScoredTransactionEvent;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
@@ -29,6 +31,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.util.backoff.FixedBackOff;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -69,7 +72,7 @@ import static org.mockito.BDDMockito.given;
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties     = "spring.main.allow-bean-definition-overriding=true"
 )
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 @ActiveProfiles("test")
 @Import(TestAlertKafkaConfig.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -87,8 +90,23 @@ class DlqRoutingIntegrationTest {
                     .withUsername("tsuser")
                     .withPassword("tspassword");
 
+    static boolean dockerAvailable = false;
+
     static {
-        Startables.deepStart(KAFKA, POSTGRES).join();
+        try {
+            if (DockerClientFactory.instance().isDockerAvailable()) {
+                Startables.deepStart(KAFKA, POSTGRES).join();
+                dockerAvailable = true;
+            }
+        } catch (Exception ignored) {
+            // Docker unavailable — tests skipped via @BeforeAll
+        }
+    }
+
+    @BeforeAll
+    static void requireDocker() {
+        Assumptions.assumeTrue(dockerAvailable,
+                "Docker not available — integration tests skipped");
     }
 
     @DynamicPropertySource

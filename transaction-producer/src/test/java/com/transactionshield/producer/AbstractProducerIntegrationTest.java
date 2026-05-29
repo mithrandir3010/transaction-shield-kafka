@@ -2,6 +2,8 @@ package com.transactionshield.producer;
 
 import com.transactionshield.producer.config.TestProducerKafkaConfig;
 import com.transactionshield.producer.support.RawEventCollector;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -10,6 +12,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -28,7 +31,7 @@ import org.testcontainers.utility.DockerImageName;
  * Paralel başlatma: Startables.deepStart() ile Kafka + Redis eş zamanlı başlar.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 @ActiveProfiles("test")
 @Import(TestProducerKafkaConfig.class)
 public abstract class AbstractProducerIntegrationTest {
@@ -44,8 +47,23 @@ public abstract class AbstractProducerIntegrationTest {
                     .withExposedPorts(6379)
                     .waitingFor(Wait.forLogMessage(".*Ready to accept connections.*\\n", 1));
 
+    static boolean dockerAvailable = false;
+
     static {
-        Startables.deepStart(KAFKA, REDIS).join();
+        try {
+            if (DockerClientFactory.instance().isDockerAvailable()) {
+                Startables.deepStart(KAFKA, REDIS).join();
+                dockerAvailable = true;
+            }
+        } catch (Exception ignored) {
+            // Docker unavailable — tests skipped via @BeforeAll
+        }
+    }
+
+    @BeforeAll
+    static void requireDocker() {
+        Assumptions.assumeTrue(dockerAvailable,
+                "Docker not available — integration tests skipped");
     }
 
     @DynamicPropertySource
