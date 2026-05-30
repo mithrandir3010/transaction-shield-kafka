@@ -11,6 +11,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  checks: write        # mikepenz/action-junit-report — publish test results to PR
+  security-events: write  # github/codeql-action/upload-sarif — Trivy SARIF upload
+
 env:
   JAVA_VERSION: '21'
   JAVA_DISTRIBUTION: 'temurin'
@@ -142,8 +147,6 @@ jobs:
     name: Security Scan
     needs: [unit-test, contract-test]
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
     steps:
       - uses: actions/checkout@v4
 
@@ -191,7 +194,7 @@ jobs:
 
       # Trivy: filesystem scan for dependency CVEs + secrets in source
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
@@ -212,8 +215,6 @@ jobs:
     name: Image Scan (${{ matrix.service }})
     needs: integration-test
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
     strategy:
       fail-fast: false
       matrix:
@@ -246,7 +247,7 @@ jobs:
 
       # Hard fail on unfixed CRITICAL/HIGH CVEs in the final image
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: transaction-shield/${{ matrix.service }}:${{ github.sha }}
           format: sarif
