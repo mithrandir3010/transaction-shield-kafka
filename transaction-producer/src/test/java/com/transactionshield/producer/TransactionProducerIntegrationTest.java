@@ -36,7 +36,7 @@ class TransactionProducerIntegrationTest extends AbstractProducerIntegrationTest
         );
 
         ResponseEntity<TransactionResponse> response =
-                restTemplate.postForEntity(URL, request, TransactionResponse.class);
+                postWithAuth(URL, request, TransactionResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
         assertThat(response.getBody()).isNotNull();
@@ -66,7 +66,7 @@ class TransactionProducerIntegrationTest extends AbstractProducerIntegrationTest
 
         // İlk istek başarılı
         ResponseEntity<TransactionResponse> first =
-                restTemplate.postForEntity(URL, request, TransactionResponse.class);
+                postWithAuth(URL, request, TransactionResponse.class);
         assertThat(first.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
 
         // İlk event Kafka'ya geldi
@@ -75,7 +75,7 @@ class TransactionProducerIntegrationTest extends AbstractProducerIntegrationTest
 
         // İkinci istek — aynı key
         ResponseEntity<String> second =
-                restTemplate.postForEntity(URL, request, String.class);
+                postWithAuth(URL, request, String.class);
         assertThat(second.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
 
         // Kafka'ya ikinci event gelmemeli
@@ -92,7 +92,7 @@ class TransactionProducerIntegrationTest extends AbstractProducerIntegrationTest
         );
 
         ResponseEntity<String> response =
-                restTemplate.postForEntity(URL, badRequest, String.class);
+                postWithAuth(URL, badRequest, String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 
@@ -110,8 +110,8 @@ class TransactionProducerIntegrationTest extends AbstractProducerIntegrationTest
                 "int-key-b-" + System.currentTimeMillis(), "user-b",
                 BigDecimal.valueOf(200), "GBP", "GB", null);
 
-        restTemplate.postForEntity(URL, req1, TransactionResponse.class);
-        restTemplate.postForEntity(URL, req2, TransactionResponse.class);
+        postWithAuth(URL, req1, TransactionResponse.class);
+        postWithAuth(URL, req2, TransactionResponse.class);
 
         TransactionEvent event1 = collector.poll(WAIT);
         TransactionEvent event2 = collector.poll(WAIT);

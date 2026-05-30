@@ -1,5 +1,10 @@
 package com.transactionshield.producer;
 
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.MACSigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import com.transactionshield.producer.config.TestProducerKafkaConfig;
 import com.transactionshield.producer.support.RawEventCollector;
 import org.junit.jupiter.api.Assumptions;
@@ -9,6 +14,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -20,6 +28,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.lifecycle.Startables;
 import org.testcontainers.utility.DockerImageName;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
 
 /**
  * transaction-producer integration testleri için temel sınıf.
@@ -73,11 +84,39 @@ public abstract class AbstractProducerIntegrationTest {
         registry.add("spring.data.redis.port",         () -> REDIS.getMappedPort(6379));
     }
 
+    /** HS256 JWT signed with the dev secret — valid for 24h, reused across all tests. */
+    static String TEST_JWT;
+
+    static {
+        try {
+            byte[] key = "dev-jwt-secret-changeme-minimum-32-bytes!!"
+                    .getBytes(StandardCharsets.UTF_8);
+            JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                    .subject("integration-test")
+                    .issuer("transaction-shield-test")
+                    .expirationTime(new Date(System.currentTimeMillis() + 86_400_000L))
+                    .build();
+            SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims);
+            jwt.sign(new MACSigner(key));
+            TEST_JWT = jwt.serialize();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate test JWT", e);
+        }
+    }
+
     @Autowired protected TestRestTemplate restTemplate;
     @Autowired protected RawEventCollector collector;
 
     @BeforeEach
     void clearCollector() {
         collector.clear();
+    }
+
+    /** Wraps a request body with Authorization: Bearer header for JWT-protected endpoints. */
+    protected <T, R> ResponseEntity<R> postWithAuth(String url, T body, Class<R> responseType) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(TEST_JWT);
+        headers.set("Content-Type", "application/json");
+        return restTemplate.postForEntity(url, new HttpEntity<>(body, headers), responseType);
     }
 }
