@@ -1,0 +1,243 @@
+# Transaction Shield — Prometheus Alerting Rules
+#
+# Mount this file into Prometheus:
+#   prometheus.yml → rule_files: ["/etc/prometheus/alerts/*.yml"]
+# Or add to docker-compose.yml:
+#   prometheus volumes: ./monitoring/prometheus-alerts.yml:/etc/prometheus/alerts/transaction-shield.yml:ro
+#
+# Severity levels:
+#   critical → PagerDuty (wake up on-call)
+#   warning  → Slack #fraud-platform-alerts (async review)
+#   info     → Slack #fraud-platform-info (FYI, no action required)
+
+groups:
+  # ── DLQ ─────────────────────────────────────────────────────────────────
+  - name: transaction-shield.dlq
+    rules:
+      - alert: DlqSpikeWarning
+        expr: rate(dlq_message_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+          runbook: https://github.com/mithrandir3010/transaction-shield-kafka/blob/main/docs/runbooks/DLQ_SPIKE.md
+        annotations:
+          summary: "DLQ spike detected on {{ $labels.service }}"
+          description: >
+            DLQ receive rate is {{ $value | humanize }}/s (threshold: 0.1/s).
+            Check error categories and consider replaying TRANSIENT messages.
+
+      - alert: DlqSpikeCritical
+        expr: rate(dlq_message_total[5m]) > 1
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+          runbook: https://github.com/mithrandir3010/transaction-shield-kafka/blob/main/docs/runbooks/DLQ_SPIKE.md
+        annotations:
+          summary: "CRITICAL: DLQ storm on {{ $labels.service }}"
+          description: >
+            DLQ receive rate is {{ $value | humanize }}/s (threshold: 1/s).
+            Transactions are being lost. Immediate investigation required.
+
+      - alert: DlqFatalMessages
+        expr: increase(dlq_message_total{error_category="FATAL"}[10m]) > 5
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+          runbook: https://github.com/mithrandir3010/transaction-shield-kafka/blob/main/docs/runbooks/SCHEMA_MISMATCH.md
+        annotations:
+          summary: "FATAL DLQ messages — likely schema mismatch"
+          description: >
+            {{ $value | humanize }} FATAL DLQ messages in last 10 minutes.
+            Most likely cause: Avro schema incompatibility or Schema Registry failure.
+
+  # ── Redis ────────────────────────────────────────────────────────────────
+  - name: transaction-shield.redis
+    rules:
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          runbook: https://github.com/mithrandir3010/transaction-shield-kafka/blob/main/docs/runbooks/REDIS_DOWN.md
+        annotations:
+          summary: "Redis is unreachable"
+          description: >
+            Redis instance {{ $labels.instance }} has been down for > 1 minute.
+            transaction-producer will return 503 on all requests.
+
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.80
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          runbook: https://github.com/mithrandir3010/transaction-shield-kafka/blob/main/docs/runbooks/REDIS_DOWN.md
+        annotations:
+          summary: "Redis memory > 80% — evictions may occur"
+          description: >
+            Redis is using {{ $value | humanizePercentage }} of configured maxmemory.
+            Risk: idempotency keys may be evicted prematurely under allkeys-lru policy.
+
+      - alert: RedisEvictionsIncreasing
+        expr: increase(redis_evicted_keys_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Redis is evicting keys"
+          description: >
+            {{ $value }} keys were evicted in the last 5 minutes.
+            Idempotency guarantee may be degraded — check for duplicate transactions.
+
+  # ── Consumer Lag ─────────────────────────────────────────────────────────
+  - name: transaction-shield.consumer-lag
+    rules:
+      - alert: ConsumerLagWarning
+        expr: kafka_consumer_lag_sum{group=~"fraud-engine.*|alert-service.*"} > 1000
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+          runbook: https://github.com/mithrandir3010/transaction-shield-kafka/blob/main/docs/runbooks/CONSUMER_LAG.md
+        annotations:
+          summary: "Consumer lag growing on {{ $labels.group }}"
+          description: >
+            Consumer group {{ $labels.group }} has lag {{ $value | humanize }}.
+            Fraud scoring is falling behind transaction production rate.
+
+      - alert: ConsumerLagCritical
+        expr: kafka_consumer_lag_sum{group=~"fraud-engine.*|alert-service.*"} > 10000
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+          runbook: https://github.com/mithrandir3010/transaction-shield-kafka/blob/main/docs/runbooks/CONSUMER_LAG.md
+        annotations:
+          summary: "CRITICAL consumer lag on {{ $labels.group }}"
+          description: >
+            Consumer group {{ $labels.group }} has lag {{ $value | humanize }}.
+            Fraud alerts will be delayed by {{ $value | humanizeDuration }}.
+            Scale consumers immediately.
+
+      - alert: ConsumerGroupOffline
+        expr: kafka_consumer_lag_sum{group=~"fraud-engine.*|alert-service.*"} unless on(group) kafka_consumer_lag_sum
+        for: 3m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Consumer group {{ $labels.group }} has no active members"
+          description: >
+            No consumers are reading from group {{ $labels.group }}.
+            All transactions will remain unscored until consumers restart.
+
+  # ── Schema Registry ──────────────────────────────────────────────────────
+  - name: transaction-shield.schema-registry
+    rules:
+      - alert: SchemaRegistryDown
+        expr: up{job="schema-registry"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+          runbook: https://github.com/mithrandir3010/transaction-shield-kafka/blob/main/docs/runbooks/SCHEMA_MISMATCH.md
+        annotations:
+          summary: "Schema Registry is unreachable"
+          description: >
+            Schema Registry has been down for > 2 minutes.
+            New producer/consumer connections will fail. Cached schemas may keep existing
+            connections working temporarily, but new pods will fail to start.
+
+  # ── Application Health ───────────────────────────────────────────────────
+  - name: transaction-shield.application
+    rules:
+      - alert: HighErrorRate
+        expr: >
+          rate(http_server_requests_seconds_count{status=~"5.."}[5m])
+          /
+          rate(http_server_requests_seconds_count[5m]) > 0.01
+        for: 3m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High HTTP error rate on {{ $labels.service }}"
+          description: >
+            {{ $labels.service }} has a {{ $value | humanizePercentage }} error rate
+            over the last 5 minutes (threshold: 1%).
+
+      - alert: HighP99Latency
+        expr: >
+          histogram_quantile(0.99,
+            rate(http_server_requests_seconds_bucket{uri="/api/v1/transactions"}[5m])
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "p99 latency > 500ms on transaction submission"
+          description: >
+            p99 latency for POST /api/v1/transactions is {{ $value | humanizeDuration }}.
+            SLO breach: p99 should be < 200ms (baseline) or < 500ms (stress).
+
+      - alert: JvmHeapNearMax
+        expr: >
+          jvm_memory_used_bytes{area="heap"}
+          /
+          jvm_memory_max_bytes{area="heap"} > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "JVM heap > 85% on {{ $labels.service }}"
+          description: >
+            {{ $labels.service }} heap usage is {{ $value | humanizePercentage }}.
+            Risk of OOMKilled / GC pressure → consumer lag.
+
+      - alert: DbPoolExhausted
+        expr: >
+          hikaricp_connections_active / hikaricp_connections_max > 0.90
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "HikariCP pool > 90% used on {{ $labels.service }}"
+          description: >
+            {{ $labels.service }} is using {{ $value | humanizePercentage }} of its
+            DB connection pool. Risk of connection timeouts and consumer stalls.
+
+  # ── Fraud Scoring Quality ────────────────────────────────────────────────
+  - name: transaction-shield.fraud-quality
+    rules:
+      - alert: FraudScoringDropped
+        expr: rate(transaction_processed_total[5m]) == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "No transactions being scored"
+          description: >
+            fraud-engine has not processed any transactions in the last 3 minutes.
+            Either no traffic (check producer) or consumer is stuck.
+
+      - alert: HighCriticalAlertRate
+        expr: rate(alert_created_total{risk_level="CRITICAL"}[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          team: fraud-ops
+        annotations:
+          summary: "Unusual spike in CRITICAL fraud alerts"
+          description: >
+            {{ $value | humanize }} CRITICAL alerts/s in last 5 minutes.
+            May indicate a genuine attack spike or a rule misconfiguration.
+            Check rule engine audit log and recent rule changes.
