@@ -38,6 +38,14 @@ app:
     publish-timeout-seconds: 5
   idempotency:
     ttl-hours: 24
+  performance:
+    # ── Kafka Producer Tuning ────────────────────────────────────────
+    # linger.ms=0 → lowest latency (each request flushed immediately)
+    # linger.ms=5 → batches requests within 5ms window → ~30% throughput gain under load
+    # producer-linger-ms: ${KAFKA_PRODUCER_LINGER_MS:5}         # override via KafkaProducerConfig
+    # producer-batch-size: ${KAFKA_PRODUCER_BATCH_SIZE:16384}   # 16KB default; 64KB for high TPS
+    # producer-compression-type: snappy                         # ~40% size reduction
+
   security:
     # Min 32 chars (256 bit) for HS256. Override via JWT_SECRET_KEY env var in production.
     jwt:

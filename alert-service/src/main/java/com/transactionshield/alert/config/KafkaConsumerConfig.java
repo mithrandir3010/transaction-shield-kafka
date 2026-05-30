@@ -27,6 +27,7 @@ import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.util.backoff.ExponentialBackOff;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 
 @Configuration
@@ -45,20 +46,28 @@ public class KafkaConsumerConfig {
     @Value("${app.kafka.schema-registry-url}")
     private String schemaRegistryUrl;
 
+    @Value("${app.kafka.consumer-concurrency:3}")
+    private int consumerConcurrency;
+
+    @Value("${app.kafka.max-poll-records:100}")
+    private int maxPollRecords;
+
     // ── Main consumer — typed for ScoredTransactionEvent (Avro) ───────
     @Bean
     public ConsumerFactory<String, com.transactionshield.avro.ScoredTransactionEvent> scoredEventConsumerFactory() {
-        return new DefaultKafkaConsumerFactory<>(Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,                    bootstrapServers,
-                ConsumerConfig.GROUP_ID_CONFIG,                             groupId,
-                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,                    "earliest",
-                ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,                   false,
-                ConsumerConfig.MAX_POLL_RECORDS_CONFIG,                     10,
-                ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,               StringDeserializer.class,
-                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,             KafkaAvroDeserializer.class,
-                AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG,  schemaRegistryUrl,
-                KafkaAvroDeserializerConfig.SPECIFIC_AVRO_READER_CONFIG,    true
-        ));
+        Map<String, Object> props = new HashMap<>();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,                   bootstrapServers);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG,                            groupId);
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,                   "earliest");
+        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,                  false);
+        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG,                    maxPollRecords);
+        props.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG,                     1024);
+        props.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG,                   100);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,              StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,            KafkaAvroDeserializer.class);
+        props.put(AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl);
+        props.put(KafkaAvroDeserializerConfig.SPECIFIC_AVRO_READER_CONFIG,   true);
+        return new DefaultKafkaConsumerFactory<>(props);
     }
 
     // ── DLQ consumer — raw bytes (handles mixed message types) ────────
@@ -122,7 +131,7 @@ public class KafkaConsumerConfig {
         factory.setConsumerFactory(scoredEventConsumerFactory);
         factory.setCommonErrorHandler(alertErrorHandler);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
-        factory.setConcurrency(3);
+        factory.setConcurrency(consumerConcurrency);
         return factory;
     }
 

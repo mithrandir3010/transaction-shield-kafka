@@ -2,6 +2,7 @@ package com.transactionshield.producer.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -40,6 +41,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(ApiError.of(503, "Service Unavailable",
                         "Transaction could not be processed. Please retry.", request.getRequestURI()));
+    }
+
+    /**
+     * Redis connection failure (RedisConnectionFailureException extends DataAccessException).
+     * Returns 503 instead of 500 — the client should retry after a backoff.
+     * Chaos scenario: Redis is paused/stopped → idempotency check fails → 503.
+     */
+    @ExceptionHandler(DataAccessException.class)
+    public ResponseEntity<ApiError> handleDataAccessFailure(DataAccessException ex,
+                                                             HttpServletRequest request) {
+        log.error("Data store unavailable — redis or downstream store failed", ex);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiError.of(503, "Service Unavailable",
+                        "Service temporarily unavailable. Please retry.", request.getRequestURI()));
     }
 
     @ExceptionHandler(Exception.class)

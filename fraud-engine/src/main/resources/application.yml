@@ -35,9 +35,19 @@ spring:
     username: ${DB_USERNAME:tsuser}
     password: ${DB_PASSWORD:tspassword}
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
+      # Pool sizing: (cpu_cores * 2) + effective_spindle_count
+      # ECS 2-vCPU + SSD → 5 ideal; use 10 for burst headroom.
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
       connection-timeout: 30000
+      validation-timeout: 5000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      # Keepalive prevents idle connections from being closed by PG's tcp_keepalives
+      keepalive-time: 30000
+      # Set to 60000 (60s) in production to detect and log connection leaks early
+      leak-detection-threshold: ${DB_LEAK_DETECTION_MS:0}
+      pool-name: fraud-engine-hikari-pool
 
   flyway:
     enabled: true
@@ -91,6 +101,24 @@ app:
       high-threshold: 5
       medium-score: 40
       high-score: 80
+
+  performance:
+    # ── Kafka Consumer Tuning ────────────────────────────────────────
+    # consumer-concurrency: must equal transactions.raw partition count.
+    # Increasing beyond partitions wastes threads (excess threads stay idle).
+    # Scale-out: increase partitions + concurrency together.
+    # consumer-concurrency: ${KAFKA_CONSUMER_CONCURRENCY:3}  # override via KafkaConsumerConfig @Value
+    #
+    # max-poll-records: 10 = lowest latency; 500 = highest throughput.
+    # Alert if consumer lag > (max-poll-records * 10) to trigger scale-out.
+    # max-poll-records: ${KAFKA_MAX_POLL_RECORDS:100}       # override via KafkaConsumerConfig @Value
+    #
+    # ── DB Pool Sizing Guide ─────────────────────────────────────────
+    # Formula: (cpu_cores * 2) + spindle_count
+    # 2-vCPU ECS, SSD (spindle=1) → ideal = 5, using 10 for burst headroom.
+    # Must be >= consumer-concurrency + rule-refresh thread + actuator threads.
+    # DB_POOL_MAX_SIZE: 10   (set via env var)
+    # DB_LEAK_DETECTION_MS: 60000   (enable in prod to catch leaked connections)
 
   security:
     # Internal API key for /api/v1/rules/** operator endpoints.

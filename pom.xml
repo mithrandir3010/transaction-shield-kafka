@@ -19,6 +19,11 @@
     </modules>
 
     <properties>
+        <!-- @Tag("chaos") tests excluded from default surefire run.
+             Override: mvn test -DskipGroups=  (run everything)
+             Only chaos: mvn test -Dgroups=chaos -->
+        <skipGroups>chaos</skipGroups>
+
         <java.version>21</java.version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
@@ -127,6 +132,17 @@
     <build>
         <pluginManagement>
             <plugins>
+                <!-- Exclude @Tag("chaos") tests from normal test runs.
+                     Run chaos tests explicitly: mvn test -Dgroups=chaos
+                     Run all tests (including chaos): mvn test -DexcludedGroups= -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <configuration>
+                        <excludedGroups>${skipGroups}</excludedGroups>
+                    </configuration>
+                </plugin>
+
                 <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
