@@ -4,6 +4,9 @@ version: '3.8'
 # Transaction Shield — Local Infrastructure
 # Services: Zookeeper, Kafka, Schema Registry,
 #           PostgreSQL, Redis, Kafka UI
+#
+# Secrets: copy .env.example to .env and set real values.
+#   docker compose --env-file .env up -d
 # ──────────────────────────────────────────────
 
 services:
@@ -137,9 +140,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: transactionshield
-      POSTGRES_USER: tsuser
-      POSTGRES_PASSWORD: tspassword
+      POSTGRES_DB: ${DB_NAME:-transactionshield}
+      POSTGRES_USER: ${DB_USERNAME:-tsuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-tspassword}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -164,6 +167,7 @@ services:
       --maxmemory-policy allkeys-lru
       --appendonly yes
       --appendfsync everysec
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     volumes:
       - redis-data:/data
     networks:

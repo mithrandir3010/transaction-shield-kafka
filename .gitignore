@@ -4,6 +4,8 @@ CLAUDE.md
 .env
 .env.*
 *.env
+# But track the example template
+!.env.example
 
 # Maven build output
 target/

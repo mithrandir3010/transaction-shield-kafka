@@ -8,7 +8,7 @@ spring:
 
   # ── Kafka ─────────────────────────────────────────────────────────
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: alert-service-consumer-group
       # ConsumerFactory, ack-mode and error handler configured in KafkaConsumerConfig.java
@@ -19,9 +19,9 @@ spring:
 
   # ── PostgreSQL ────────────────────────────────────────────────────
   datasource:
-    url: jdbc:postgresql://localhost:5432/transactionshield
-    username: tsuser
-    password: tspassword
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:transactionshield}
+    username: ${DB_USERNAME:tsuser}
+    password: ${DB_PASSWORD:tspassword}
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
@@ -55,11 +55,10 @@ app:
     transactions-dlq-topic:    transactions.dlq
     alerts-created-topic:      alerts.created
     publish-timeout-seconds:   5
-    schema-registry-url:       http://localhost:8081
+    schema-registry-url:       ${SCHEMA_REGISTRY_URL:http://localhost:8081}
 
   alert:
     # Risk levels that trigger an AlertCreatedEvent (downstream notification hook)
-    # Override via env var: APP_ALERT_NOTIFY-RISK-LEVELS=CRITICAL
     notify-risk-levels: HIGH,CRITICAL
 
   dlq:
@@ -68,6 +67,11 @@ app:
       max-replay-attempts: 3
       # How long to wait for new messages in a single poll() call (seconds)
       poll-timeout-seconds: 10
+
+  security:
+    # Internal API key for /api/v1/alerts/** and /api/v1/dlq/** endpoints.
+    # Override via INTERNAL_API_KEY env var in production.
+    internal-api-key: ${INTERNAL_API_KEY:internal-dev-key-change-in-production}
 
 # ── Actuator ────────────────────────────────────────────────────────
 management:

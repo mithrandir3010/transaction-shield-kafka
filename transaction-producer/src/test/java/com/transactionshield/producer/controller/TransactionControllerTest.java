@@ -16,10 +16,16 @@ import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import com.transactionshield.producer.security.JwtSecurityConfig;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithMockUser;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(TransactionController.class)
+@Import(JwtSecurityConfig.class)
+@WithMockUser
 @DisplayName("TransactionController — HTTP katmanı testleri")
 class TransactionControllerTest {
 

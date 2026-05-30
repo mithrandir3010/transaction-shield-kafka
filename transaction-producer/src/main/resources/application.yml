@@ -7,7 +7,7 @@ spring:
     name: transaction-producer
 
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     listener:
       observation-enabled: true
     template:
@@ -15,8 +15,9 @@ spring:
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
       timeout: 2000ms
       lettuce:
         pool:
@@ -32,11 +33,15 @@ spring:
 
 app:
   kafka:
-    schema-registry-url: http://localhost:8081
+    schema-registry-url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
     transactions-raw-topic: transactions.raw
     publish-timeout-seconds: 5
   idempotency:
     ttl-hours: 24
+  security:
+    # Min 32 chars (256 bit) for HS256. Override via JWT_SECRET_KEY env var in production.
+    jwt:
+      secret: ${JWT_SECRET_KEY:dev-jwt-secret-changeme-minimum-32-bytes!!}
 
 management:
   endpoints:

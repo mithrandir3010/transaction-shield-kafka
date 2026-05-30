@@ -8,7 +8,7 @@ spring:
 
   # ── Kafka ─────────────────────────────────────────────────────────
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: fraud-engine-consumer-group
       # auto-offset-reset and enable.auto.commit are set in KafkaConsumerConfig.java
@@ -20,8 +20,9 @@ spring:
   # ── Redis ─────────────────────────────────────────────────────────
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
       timeout: 2000ms
       lettuce:
         pool:
@@ -30,9 +31,9 @@ spring:
 
   # ── PostgreSQL ────────────────────────────────────────────────────
   datasource:
-    url: jdbc:postgresql://localhost:5432/transactionshield
-    username: tsuser
-    password: tspassword
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:transactionshield}
+    username: ${DB_USERNAME:tsuser}
+    password: ${DB_PASSWORD:tspassword}
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
@@ -66,7 +67,7 @@ app:
     transactions-scored-topic: transactions.scored
     transactions-dlq-topic:    transactions.dlq
     publish-timeout-seconds:   5
-    schema-registry-url:       http://localhost:8081
+    schema-registry-url:       ${SCHEMA_REGISTRY_URL:http://localhost:8081}
 
   idempotency:
     scoring:
@@ -74,8 +75,6 @@ app:
 
   rules:
     # How often to reload rule configs and experiments from DB (ms).
-    # Set to a low value (e.g. 10000) during active A/B experiments for faster rollout.
-    # Default: 5 minutes.
     refresh-interval-ms: 300000
 
     # Legacy YAML thresholds kept as application-level fallbacks.
@@ -92,6 +91,11 @@ app:
       high-threshold: 5
       medium-score: 40
       high-score: 80
+
+  security:
+    # Internal API key for /api/v1/rules/** operator endpoints.
+    # Override via INTERNAL_API_KEY env var in production.
+    internal-api-key: ${INTERNAL_API_KEY:internal-dev-key-change-in-production}
 
 # ── Actuator ────────────────────────────────────────────────────────
 management:

@@ -4,6 +4,12 @@
 
     <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- Safety-net: masks 13-19 digit card-like patterns anywhere in log output.
+                 Primary defense is PiiMasker.maskUserId() at each log call-site. -->
+            <jsonGeneratorDecorator class="net.logstash.logback.mask.MaskingJsonGeneratorDecorator">
+                <defaultMask>[REDACTED]</defaultMask>
+                <value>\b\d{13,19}\b</value>
+            </jsonGeneratorDecorator>
             <customFields>{"service":"${appName}"}</customFields>
         </encoder>
     </appender>

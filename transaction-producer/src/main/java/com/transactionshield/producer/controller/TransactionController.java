@@ -2,6 +2,7 @@ package com.transactionshield.producer.controller;
 
 import com.transactionshield.common.dto.TransactionRequest;
 import com.transactionshield.common.dto.TransactionResponse;
+import com.transactionshield.common.security.PiiMasker;
 import com.transactionshield.producer.service.TransactionProducerService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +33,8 @@ public class TransactionController {
     @PostMapping
     public ResponseEntity<TransactionResponse> submit(@Valid @RequestBody TransactionRequest request) {
         log.info("Received transaction request — idempotencyKey={} userId={} amount={} {}",
-                request.idempotencyKey(), request.userId(), request.amount(), request.currency());
+                request.idempotencyKey(), PiiMasker.maskUserId(request.userId()),
+                request.amount(), request.currency());
 
         TransactionResponse response = producerService.submit(request);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
