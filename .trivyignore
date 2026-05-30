@@ -1,0 +1,15 @@
+# Trivy Ignore File — Transaction Shield
+#
+# Add CVE IDs here to suppress known false positives or accepted risks.
+# Each entry must be reviewed and re-approved every 90 days.
+#
+# Format:
+#   CVE-YYYY-NNNNN  # Reason | Reviewed: YYYY-MM-DD | Expires: YYYY-MM-DD
+#
+# Current policy:
+#   - CRITICAL CVEs: must have a remediation plan within 7 days
+#   - HIGH CVEs in base image with no upstream fix: suppress after review
+#   - All suppressions require a GitHub issue reference
+#
+# Example:
+#   CVE-2023-12345  # Alpine musl - not exploitable in JRE-only container | 2026-05-30 | expires 2026-08-30
