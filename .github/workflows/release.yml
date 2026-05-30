@@ -1,0 +1,41 @@
+name: Release
+
+# Runs only on commits to main (after PR merge).
+# release-please opens a "Release PR" that bumps pom.xml version + updates CHANGELOG.
+# When that PR is merged, it creates a GitHub Release + tag (e.g. v1.1.0).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write       # create tags and releases
+  pull-requests: write  # open and update Release PRs
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name:        ${{ steps.rp.outputs.tag_name }}
+      version:         ${{ steps.rp.outputs.version }}
+      html_url:        ${{ steps.rp.outputs.html_url }}
+
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          config-file:   .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json
+
+      - name: Release summary
+        if: steps.rp.outputs.release_created == 'true'
+        run: |
+          echo "## 🚀 Released ${{ steps.rp.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ steps.rp.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | \`${{ steps.rp.outputs.tag_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release URL | ${{ steps.rp.outputs.html_url }} |" >> $GITHUB_STEP_SUMMARY

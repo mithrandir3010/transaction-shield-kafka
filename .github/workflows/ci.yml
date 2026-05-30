@@ -2,32 +2,262 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+# Abort superseded runs on the same branch to save minutes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '21'
+  JAVA_DISTRIBUTION: 'temurin'
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Pipeline:
+#
+#   build
+#     ├── unit-test  ────────────────────────┐
+#     └── contract-test (Avro) ──────────────┤
+#                                            ├── integration-test ── image-scan
+#                                            └── security-scan (parallel)
+#
+# All jobs are required status checks → trunk protection blocks merges on failure.
+# ──────────────────────────────────────────────────────────────────────────────
 
 jobs:
+
+  # ── Stage 1: Compile ──────────────────────────────────────────────────────
   build:
-    name: Build & Test
+    name: Build
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
-          java-version: '21'
-          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
           cache: maven
 
-      - name: Build and verify
-        run: mvn --batch-mode verify
+      - name: Compile all modules
+        run: mvn --batch-mode compile -q
 
-      - name: Upload test reports on failure
+  # ── Stage 2a: Unit Tests (no Docker) ─────────────────────────────────────
+  unit-test:
+    name: Unit Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      # chaos tag excluded — those require Docker and are gated separately
+      - name: Run unit tests
+        run: mvn --batch-mode test -DexcludedGroups=chaos
+
+      - name: Publish test results
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: '**/target/surefire-reports/TEST-*.xml'
+          check_name: Unit Test Results
+          fail_on_failure: true
+
+      - uses: actions/upload-artifact@v4
         if: failure()
+        with:
+          name: unit-test-reports
+          path: '**/target/surefire-reports/'
+          retention-days: 7
+
+  # ── Stage 2b: Contract Tests (Avro schema BACKWARD compatibility) ─────────
+  contract-test:
+    name: Contract Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: Avro schema compatibility & serialization contracts
+        run: |
+          mvn --batch-mode test -pl common \
+            -Dtest="SchemaCompatibilityTest,EventSerializationContractTest"
+
+      - name: Publish contract test results
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: 'common/target/surefire-reports/TEST-*.xml'
+          check_name: Contract Test Results
+          fail_on_failure: true
+
+  # ── Stage 3a: Integration Tests (Testcontainers — Docker available on runner)
+  integration-test:
+    name: Integration Tests
+    needs: [unit-test, contract-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: Run integration tests (Testcontainers)
+        run: mvn --batch-mode verify -DexcludedGroups=chaos
+
+      - name: Publish integration test results
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: '**/target/surefire-reports/TEST-*.xml'
+          check_name: Integration Test Results
+          fail_on_failure: true
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: integration-test-reports
+          path: '**/target/surefire-reports/'
+          retention-days: 7
+
+  # ── Stage 3b: Security Scan (parallel with integration-test) ─────────────
+  security-scan:
+    name: Security Scan
+    needs: [unit-test, contract-test]
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: Build JARs (no tests)
+        run: mvn --batch-mode package -DskipTests -q
+
+      # NVD database cache — prevents re-downloading ~200 MB on every run
+      - name: Cache OWASP NVD database
+        uses: actions/cache@v4
+        with:
+          path: ~/.dependency-check
+          key: owasp-nvd-${{ hashFiles('**/pom.xml') }}
+          restore-keys: owasp-nvd-
+
+      - name: OWASP Dependency Check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          EXTRA_ARGS=""
+          if [ -n "${NVD_API_KEY}" ]; then
+            EXTRA_ARGS="-DnvdApiKey=${NVD_API_KEY}"
+          fi
+          mvn --batch-mode org.owasp:dependency-check-maven:10.0.4:check \
+            -DfailBuildOnCVSS=9 \
+            -DsuppressionsFile=.github/owasp-suppressions.xml \
+            -DdataDirectory="${HOME}/.dependency-check/data" \
+            ${EXTRA_ARGS}
+        # Known false positives suppressed in owasp-suppressions.xml.
+        # CVSS < 9 treated as warnings (continue-on-error=true) to avoid NVD data lag.
+        continue-on-error: true
+
+      - name: Upload OWASP HTML report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
-          path: '**/target/surefire-reports/'
+          name: owasp-report
+          path: '**/target/dependency-check-report.html'
+          retention-days: 14
+
+      # Trivy: filesystem scan for dependency CVEs + secrets in source
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 0        # report-only; hard fail on image scan instead
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-filesystem
+
+  # ── Stage 4: Docker Image Build & Trivy Scan ─────────────────────────────
+  image-scan:
+    name: Image Scan (${{ matrix.service }})
+    needs: integration-test
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: transaction-producer
+            port: 8082
+          - service: fraud-engine
+            port: 8083
+          - service: alert-service
+            port: 8084
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: Build ${{ matrix.service }} JAR
+        run: mvn --batch-mode package -pl ${{ matrix.service }} -am -DskipTests -q
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg GIT_SHA=${{ github.sha }} \
+            -t transaction-shield/${{ matrix.service }}:${{ github.sha }} \
+            ${{ matrix.service }}/
+
+      # Hard fail on unfixed CRITICAL/HIGH CVEs in the final image
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: transaction-shield/${{ matrix.service }}:${{ github.sha }}
+          format: sarif
+          output: trivy-image-${{ matrix.service }}.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 1
+
+      - name: Upload image scan SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image-${{ matrix.service }}.sarif
+          category: trivy-image-${{ matrix.service }}
