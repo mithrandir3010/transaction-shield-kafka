@@ -11,6 +11,21 @@ Entries are generated automatically by
 
 ---
 
+## [1.0.1](https://github.com/mithrandir3010/transaction-shield-kafka/compare/v1.0.0...v1.0.1) (2026-05-30)
+
+
+### 🐛 Bug Fixes
+
+* **ci:** image scan advisory-only, add .trivyignore policy file ([f6038f4](https://github.com/mithrandir3010/transaction-shield-kafka/commit/f6038f413b958f4bbfd03f6e5cbf968a567bb8e1))
+* **ci:** remove component prefix from release-please config ([7d54384](https://github.com/mithrandir3010/transaction-shield-kafka/commit/7d54384191cddb0c561d9839ec6193ba79f99065))
+* **ci:** trivy-action@master, global permissions for checks+security-events ([0e9c78e](https://github.com/mithrandir3010/transaction-shield-kafka/commit/0e9c78e8f69ed29592a7d4a9303127d5d2105c68))
+* **tests:** add JWT Bearer token to integration tests after security rollout ([267e6d5](https://github.com/mithrandir3010/transaction-shield-kafka/commit/267e6d50eb96ffb9af3a750de495645c7e701639))
+
+
+### 📝 Documentation
+
+* **ops:** runbooks, alert thresholds, RTO/RPO, rollback procedures ([14524bc](https://github.com/mithrandir3010/transaction-shield-kafka/commit/14524bcd36112dfd7cc3b7fd15b2364d88da6bcb))
+
 ## [1.0.0] — 2026-05-30
 
 ### ✨ Features

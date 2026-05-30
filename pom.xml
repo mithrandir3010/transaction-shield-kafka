@@ -4,7 +4,7 @@
 
     <groupId>com.transactionshield</groupId>
     <artifactId>transaction-shield-kafka</artifactId>
-    <version>1.0.1-SNAPSHOT</version>
+    <version>1.0.1</version>
     <packaging>pom</packaging>
     <name>Transaction Shield :: Parent</name>
 
